@@ -1,0 +1,79 @@
+{{define "index"}}{{template "top" (dict "Title" "Projects" "Base" .Base)}}
+<h2>Literature review projects</h2>
+
+{{if not .Base.AIEnabled}}<p class="notice">No AI backend available. Either set <code>ANTHROPIC_API_KEY</code>, or install the <code>claude</code> CLI and log in with your subscription (<code>claude /login</code>); the app then runs it in headless mode. Query generation, screening and synthesis all use Claude.</p>{{end}}
+{{if not .Base.ProxyCookie}}<p class="notice">University access is {{if .Base.ProxySet}}missing its session cookie{{else}}not configured{{end}}: paywalled PDFs will fail unless you are on campus/VPN. <a href="/access">Set up library access</a>.</p>{{end}}
+{{if not .Base.EmailSet}}<p class="notice">Set <code>CONTACT_EMAIL</code>: Unpaywall requires it and OpenAlex/CrossRef give faster, more reliable service when it is present.</p>{{end}}
+
+<div class="card">
+  <h3 style="margin-top:0">New review</h3>
+  <form method="post" action="/projects">
+    <label>Research question <span class="muted">(required)</span></label>
+    <textarea name="question" required placeholder="e.g. How do public-sector organisations adopt generative AI, and what governance mechanisms do they use?"></textarea>
+    <div class="grid">
+      <div>
+        <label>Project title <span class="muted">(optional)</span></label>
+        <input type="text" name="title" placeholder="Defaults to the question">
+      </div>
+      <div>
+        <label>Results per query</label>
+        <input type="number" name="max_per_source" value="25" min="5" max="200">
+      </div>
+      <div>
+        <label>Target included papers</label>
+        <input type="number" name="target" value="25" min="0" max="500" title="The search broadens automatically (up to 2 extra rounds) while fewer papers are included. 0 disables.">
+      </div>
+      <div>
+        <label>Year from</label>
+        <input type="number" name="year_from" value="{{.YearFrom}}" min="1900" max="2100">
+      </div>
+      <div>
+        <label>Year to</label>
+        <input type="number" name="year_to" value="{{.YearTo}}" min="1900" max="2100">
+      </div>
+    </div>
+    <label>Discipline and audience <span class="muted">(shapes vocabulary, screening, table and the synthesis register)</span></label>
+    <input type="text" name="discipline" value="Information Systems (IS) research; organisational and socio-technical perspective; target venues ECIS/ICIS/JAIS/MISQ" placeholder="e.g. Information Systems research; or Health informatics; or Computer science (NLP)">
+    <div class="grid">
+      <div>
+        <label>Inclusion criteria</label>
+        <textarea name="inclusion" placeholder="Empirical studies; peer-reviewed; organisational level of analysis…"></textarea>
+      </div>
+      <div>
+        <label>Exclusion criteria</label>
+        <textarea name="exclusion" placeholder="Purely technical ML papers; opinion pieces; non-English…"></textarea>
+      </div>
+    </div>
+    <label>Databases</label>
+    <div class="checks">
+      {{range .Sources}}<label title="{{.Syntax}}"><input type="checkbox" name="sources" value="{{.Name}}" {{if .Checked}}checked{{end}}> {{.Label}}</label>{{end}}
+    </div>
+    <div class="checks" style="margin-top:8px"><label><input type="checkbox" name="peer_reviewed_only" value="1" checked> Peer-reviewed only: exclude preprint servers and repositories (arXiv, SSRN, OSF, Research Square, Zenodo…)</label>
+    <label><input type="checkbox" name="english_only" value="1" checked> English only (reported language, or detected from title and abstract)</label></div>
+    <p class="muted small">CORE appears only when <code>CORE_API_KEY</code> is set. Each database gets 2–3 AI-written queries in its own syntax.</p>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-primary" type="submit" name="start" value="1" {{if not .Base.AIEnabled}}disabled{{end}}>Create &amp; start AI search</button>
+      <button type="submit" name="start" value="0">Create only</button>
+    </div>
+  </form>
+</div>
+
+{{if .Projects}}
+<h3>Existing projects</h3>
+<table>
+  <thead><tr><th>Title</th><th>Stage</th><th>Papers</th><th>Kept</th><th>Updated</th><th></th></tr></thead>
+  <tbody>
+  {{range .Projects}}
+    <tr>
+      <td><a href="/projects/{{.ID}}">{{.Title}}</a><br><span class="muted small">{{.Question}}</span></td>
+      <td><span class="badge">{{.Stage}}</span>{{if and .Job .Job.Running}} <span class="badge">{{.Job.Name}} running</span>{{end}}</td>
+      <td>{{len .Papers}}</td>
+      <td>{{len .Kept}}</td>
+      <td class="small muted">{{fmtTime .UpdatedAt}}</td>
+      <td><form method="post" action="/projects/{{.ID}}/delete" onsubmit="return confirm('Delete this project and its PDFs?')"><button class="btn-danger small">Delete</button></form></td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
+{{template "bottom" .}}{{end}}

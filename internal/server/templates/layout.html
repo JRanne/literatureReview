@@ -1,0 +1,36 @@
+{{define "top"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · litreview</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
+</head>
+<body>
+<header class="top">
+  <h1><a href="/">📚 litreview</a></h1>
+  <span class="muted small">AI-assisted literature review</span>
+  <span class="meta">
+    {{if .Base.AIEnabled}}AI: {{.Base.AIBackend}} · {{.Base.Model}}{{else}}<span class="err">no AI backend</span>{{end}}{{if .Base.JevEnabled}} · 2nd screener: Jev {{.Base.JevModel}}{{end}}
+    · <a href="/access">library access: {{if .Base.ProxySet}}{{if .Base.ProxyCookie}}on{{else}}prefix only, no cookie{{end}}{{else}}off{{end}}</a>
+  </span>
+</header>
+<main>
+{{end}}
+
+{{define "bottom"}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "stages"}}
+<ol class="stages nav">
+  <li class="{{if eq .View "setup"}}on{{else}}done{{end}}"><a href="?view=setup">1 · Setup</a></li>
+  <li class="{{if eq .View "search"}}on{{else}}done{{end}}"><a href="?view=search">2 · Search strategy</a></li>
+  <li class="{{if eq .View "screening"}}on{{else if .HasPapers}}done{{end}}">{{if .HasPapers}}<a href="?view=screening">3 · Keep / drop</a>{{else}}3 · Keep / drop{{end}}</li>
+  <li class="{{if eq .View "downloads"}}on{{else if .HasKept}}done{{end}}">{{if .HasKept}}<a href="?view=downloads">4 · PDFs</a>{{else}}4 · PDFs{{end}}</li>
+  <li class="{{if eq .View "results"}}on{{else if ge .StageIdx 3}}done{{end}}">{{if ge .StageIdx 3}}<a href="?view=results">5 · Table &amp; synthesis</a>{{else}}5 · Table &amp; synthesis{{end}}</li>
+</ol>
+{{end}}

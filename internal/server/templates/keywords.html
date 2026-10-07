@@ -1,0 +1,70 @@
+{{define "keywords"}}{{template "top" (dict "Title" (print .P.Title " · keyword map") "Base" .Base)}}
+<div class="row" style="justify-content:space-between">
+  <div>
+    <h2 style="margin:0">Keyword co-occurrence map</h2>
+    <div class="muted">{{.P.Title}} · {{.InScope}} {{if eq .Scope "all"}}candidate{{else}}included{{end}} papers, {{.Covered}} with keywords · {{len .Net.Nodes}} keywords shown of {{.Net.Distinct}} distinct · {{len .Net.Edges}} links</div>
+  </div>
+  <div class="row">
+    <a class="btn" href="/projects/{{.P.ID}}?view=results">← Project</a>
+    <a class="btn" href="/projects/{{.P.ID}}/keywords/vosviewer-map.txt?scope={{.Scope}}&min={{.MinCount}}&max={{.MaxNodes}}">VOSviewer map</a>
+    <a class="btn" href="/projects/{{.P.ID}}/keywords/vosviewer-network.txt?scope={{.Scope}}&min={{.MinCount}}&max={{.MaxNodes}}">VOSviewer network</a>
+    <a class="btn" href="/projects/{{.P.ID}}/keywords/keywords.csv?scope={{.Scope}}&min={{.MinCount}}&max={{.MaxNodes}}">CSV</a>
+  </div>
+</div>
+{{if .Error}}<p class="err" style="margin-top:10px">{{.Error}}</p>{{end}}
+{{if .Running}}<div id="job" hx-get="/projects/{{.P.ID}}/job" hx-trigger="every 2s" hx-swap="outerHTML" style="margin-top:10px">{{template "job" (dict "P" .P)}}</div>{{end}}
+
+<div class="card row" style="margin-top:12px; gap:14px; align-items:flex-end">
+  <form method="get" class="row" style="gap:10px; align-items:flex-end">
+    <div><label>Papers</label><select name="scope"><option value="kept" {{if eq .Scope "kept"}}selected{{end}}>included only</option><option value="all" {{if eq .Scope "all"}}selected{{end}}>all candidates</option></select></div>
+    <div><label>Min. occurrences</label><input type="number" name="min" value="{{.MinCount}}" min="1" max="50" style="width:80px"></div>
+    <div><label>Max. keywords</label><input type="number" name="max" value="{{.MaxNodes}}" min="10" max="300" style="width:80px"></div>
+    <button>Redraw</button>
+  </form>
+  {{if .Enrichable}}<form method="post" action="/projects/{{.P.ID}}/keywords/enrich" class="row" style="gap:6px"><input type="hidden" name="scope" value="{{.Scope}}"><button class="btn-primary" {{if .Running}}disabled{{end}} title="Fetch each paper's curated keywords from OpenAlex by DOI">Fetch database keywords</button><button name="force" value="1" {{if .Running}}disabled{{end}} title="Re-fetch for all papers">Re-fetch all</button></form>{{end}}
+  <button type="button" id="relayout" title="Run the force layout again, then freeze">Re-layout</button>
+  <span class="muted small">Keywords come from OpenAlex's curated keywords and from the AI extraction on the master table. Node size = number of papers; link width = co-occurrences; colour = cluster (label propagation on association-strength-normalised links, as in VOSviewer). Files import directly into <a href="https://www.vosviewer.com/" target="_blank" rel="noopener">VOSviewer</a> via File → Open → Map / Network.</span>
+</div>
+
+<div id="map" class="card" style="height:640px; padding:0"></div>
+
+<details class="card" open><summary>Top keywords</summary>
+<table style="margin-top:8px"><thead><tr><th>#</th><th>Keyword</th><th>Papers</th><th>Cluster</th><th>Links</th><th>Total link strength</th></tr></thead><tbody>
+{{range $i, $n := .Net.Nodes}}{{if lt $i 40}}<tr><td>{{add $i 1}}</td><td>{{$n.Label}}</td><td>{{$n.Count}}</td><td><span class="badge cl{{$n.Cluster}}">{{$n.Cluster}}</span></td><td>{{$n.Links}}</td><td>{{$n.Weight}}</td></tr>{{end}}{{end}}
+</tbody></table></details>
+
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<script>
+(function(){
+  const net = JSON.parse({{.NetJSON}}); window.__net = net;
+  const palette = ['#2458d6','#d6452e','#1f8a4c','#a66b00','#7b3fb0','#0f8b8d','#c2185b','#5d4037','#455a64','#827717'];
+  const maxCount = Math.max(1, ...net.nodes.map(n => n.count));
+  const nodes = new vis.DataSet(net.nodes.map(n => ({
+    id: n.id, label: n.label, value: n.count,
+    title: n.label + ' · ' + n.count + ' papers · cluster ' + n.cluster + ' · ' + n.links + ' links',
+    color: { background: palette[(n.cluster - 1) % palette.length], border: '#ffffff' },
+    font: { size: 12 + Math.round(14 * n.count / maxCount), color: '#1d2430' }
+  })));
+  const edges = new vis.DataSet(net.edges.map(e => ({ from: e.from, to: e.to, value: e.weight, title: e.weight + ' co-occurrence(s)', color: { color: 'rgba(100,110,130,0.35)' } })));
+  const container = document.getElementById('map');
+  const network = new vis.Network(container, { nodes, edges }, {
+    nodes: { shape: 'dot', scaling: { min: 8, max: 46 }, borderWidth: 2 },
+    edges: { smooth: false, scaling: { min: 1, max: 10 } },
+    // Lay out once, then freeze: the map must stay still while you inspect it.
+    physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -60, springLength: 120, avoidOverlap: 0.6 }, stabilization: { enabled: true, iterations: 600, updateInterval: 50, fit: true } },
+    interaction: { hover: true, tooltipDelay: 80, dragNodes: true, zoomView: true, dragView: true },
+    layout: { improvedLayout: false }
+  });
+  const freeze = () => { network.setOptions({ physics: { enabled: false } }); network.fit({ animation: false }); window.__frozen = true; };
+  network.once('stabilizationIterationsDone', freeze);
+  setTimeout(() => { if (!window.__frozen) freeze(); }, 8000); // safety net
+  window.__network = network;
+  document.getElementById('relayout').addEventListener('click', () => {
+    window.__frozen = false;
+    network.setOptions({ physics: { enabled: true } });
+    network.stabilize(600);
+    network.once('stabilizationIterationsDone', freeze);
+  });
+})();
+</script>
+{{template "bottom" .}}{{end}}

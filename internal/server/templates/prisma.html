@@ -1,0 +1,28 @@
+{{define "prisma"}}{{template "top" (dict "Title" (print .P.Title " · PRISMA") "Base" .Base)}}
+<div class="row" style="justify-content:space-between">
+  <div><h2 style="margin:0">PRISMA 2020 flow diagram</h2><div class="muted">{{.P.Title}}</div></div>
+  <div class="row"><a class="btn" href="/projects/{{.P.ID}}?view=results">← Project</a><a class="btn" href="/projects/{{.P.ID}}/prisma.svg">Download SVG</a></div>
+</div>
+<div class="card" style="overflow-x:auto; margin-top:12px">{{.SVG}}</div>
+<div class="card">
+  <h3 style="margin-top:0">Counts</h3>
+  <table>
+    <tr><th>Records identified from databases</th><td>{{.C.Databases}} ({{join .DBLines "; "}})</td></tr>
+    <tr><th>Records from citation searching</th><td>{{.C.Citation}}</td></tr>
+    <tr><th>Removed before screening: duplicates</th><td>{{.C.Duplicates}}</td></tr>
+    <tr><th>Removed before screening: filters (preprint, language)</th><td>{{.C.Automation}}</td></tr>
+    <tr><th>Records screened</th><td>{{.C.Screened}}</td></tr>
+    <tr><th>Records excluded</th><td>{{.C.Excluded}}{{if .Reasons}} — {{join .Reasons "; "}}{{end}}</td></tr>
+    {{if .C.Undecided}}<tr><th>Still undecided</th><td>{{.C.Undecided}}</td></tr>{{end}}
+    <tr><th>Reports sought for retrieval</th><td>{{.C.Sought}}</td></tr>
+    <tr><th>Reports not retrieved</th><td>{{.C.NotRetrieved}}</td></tr>
+    <tr><th>Reports assessed (full text obtained)</th><td>{{.C.Assessed}}</td></tr>
+    <tr><th>Studies included</th><td>{{.C.Included}}</td></tr>
+  </table>
+  <p class="muted small">Duplicates and filter removals are counted from searches run after this feature was added; for earlier rounds they are reconstructed as identified minus screened, so treat them as approximate. The diagram has no full-text exclusion box because the app does not screen full texts.</p>
+</div>
+<div class="card">
+  <h3 style="margin-top:0">Methods paragraph</h3>
+  <p class="synth" style="user-select:all">{{.Methods}}</p>
+</div>
+{{template "bottom" .}}{{end}}

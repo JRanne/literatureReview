@@ -1,0 +1,67 @@
+{{define "access"}}{{template "top" (dict "Title" "Library access" "Base" .Base)}}
+<h2>Library access (university proxy)</h2>
+<p class="muted">PDFs are fetched in this order: {{join .Chain " → "}}. The last step routes publisher requests through your university's EZproxy with your logged-in browser session, so subscribed articles download exactly as they would in your browser.</p>
+{{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+
+<div class="card">
+  <h3 style="margin-top:0">Log in through your browser (recommended)</h3>
+  {{if .LoginRunning}}
+    <div id="login" hx-get="/access/status" hx-trigger="every 2s" hx-swap="outerHTML">{{template "login_status" (dict "Running" .LoginRunning "Done" .LoginDone "OK" .LoginOK "Message" .LoginMessage "Log" .LoginLog)}}</div>
+  {{else}}
+    {{if .LoginDone}}<p class="{{if .LoginOK}}notice{{else}}err{{end}}">{{.LoginMessage}}</p>{{end}}
+    <p class="small">The app opens <b>{{if .Browser}}{{.Browser}}{{else}}a Chromium-based browser{{end}}</b> with its own private profile on your library's login page. You sign in with Haka as usual; the app only waits for the proxy session cookie to appear, stores it, closes the window and runs the access test. No password is seen or stored by the app.</p>
+    <form method="post" action="/access/browser" class="row">
+      <button class="btn-primary" {{if or (not .A.ProxyPrefix) (not .Browser)}}disabled{{end}}>Open browser login</button>
+      {{if not .A.ProxyPrefix}}<span class="muted small">set the proxy prefix below first</span>{{end}}
+      {{if not .Browser}}<span class="muted small">no Chromium-based browser found; paste the cookie manually below</span>{{end}}
+    </form>
+  {{end}}
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Manual settings</h3>
+  <form method="post" action="/access">
+    <label>EZproxy login prefix</label>
+    <input type="text" name="proxy_prefix" value="{{.A.ProxyPrefix}}" placeholder="https://ezproxy.your-university.fi/login?url=">
+    <div class="muted small">Find it in any proxied library link: the part before the publisher URL. Finnish examples: <code>https://libproxy.helsinki.fi/login?url=</code>, <code>https://libproxy.aalto.fi/login?url=</code>, <code>https://ezproxy.utu.fi/login?url=</code>, <code>https://ezproxy.jyu.fi/login?url=</code>, <code>https://libproxy.tuni.fi/login?url=</code>, <code>https://ezproxy.uef.fi/login?url=</code>, <code>https://login.ezproxy.ulapland.fi/login?url=</code>. (Verify yours on the library website.)</div>
+
+    <label>Session cookie {{if .CookieSet}}<span class="badge oa">set{{if .A.UpdatedAt}} {{fmtTime .A.UpdatedAt}}{{end}}</span>{{else}}<span class="badge drop">not set</span>{{end}}</label>
+    <textarea name="proxy_cookie" rows="2" placeholder="ezproxy=AbC123…   (leave empty to keep the current one)"></textarea>
+    <div class="muted small">
+      How to get it: 1) open a proxied link in your browser and log in (Haka/SSO); 2) press F12 → <i>Application</i> (Chrome) or <i>Storage</i> (Firefox) → <i>Cookies</i> → the proxy domain; 3) copy the cookie named <code>ezproxy</code> (sometimes also <code>ezproxyl</code>/<code>ezproxyn</code>; paste them as <code>name=value; name2=value2</code>). You can also paste a <code>cookies.txt</code> export. Sessions usually expire after a few hours of inactivity; when downloads start failing with "redirected to login", paste a fresh cookie. The cookie is stored only in <code>data/settings.json</code> on this machine.
+    </div>
+    {{if .A.LastTestAt}}<p class="small">Last access test {{fmtTime .A.LastTestAt}}: {{if .A.LastTestOK}}<span class="status-ok">passed</span>{{else}}<span class="status-failed">failed</span>{{end}} — {{.A.LastTestMsg}}</p>{{end}}
+    <div class="row" style="margin-top:12px">
+      <button class="btn-primary" name="test" value="1">Save &amp; test access</button>
+      <button name="test" value="0">Save</button>
+      {{if .CookieSet}}<button name="clear_cookie" value="1" class="btn-danger">Forget cookie</button>{{end}}
+      <a class="btn" href="/">← Projects</a>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Scimago Journal Rank (quartiles) {{if .ScimagoSet}}<span class="badge oa">{{.ScimagoCount}} journals loaded</span>{{else}}<span class="badge">not loaded</span>{{end}}</h3>
+  <p class="small">Scimago blocks automated downloads, so fetch the file yourself: open <a href="https://www.scimagojr.com/journalrank.php" target="_blank" rel="noopener">scimagojr.com/journalrank.php</a>, click <i>Download data</i> (bottom right; a semicolon-separated CSV of all ~30,000 journals), and upload it here. Venue ratings then include the SJR best quartile (Q1 raises a venue to <i>good</i>, Q2 to <i>basic</i>; Q3/Q4 are shown but do not raise the tier). Re-rate venues afterwards.</p>
+  <form method="post" action="/access/scimago" enctype="multipart/form-data" class="row"><input type="file" name="scimago" accept=".csv,text/csv" required><button class="btn-primary">Upload Scimago CSV</button></form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">What else raises the PDF yield</h3>
+  <ul class="small">
+    <li><b>Campus network or VPN</b>: the "publisher (direct)" step then succeeds for subscribed content without any proxy.</li>
+    <li><b>Publisher patterns</b>: for Springer, Elsevier, Wiley, Taylor &amp; Francis, SAGE, ACM, IEEE, Emerald, INFORMS, World Scientific, SSRN, Nature, PLOS and Frontiers the app derives the direct PDF endpoint from the DOI and tries it both directly and through the proxy.</li>
+    <li><b>Manual upload</b>: on the PDFs step every failed paper has an <i>open via proxy</i> link and an upload field, so nothing is out of reach.</li>
+  </ul>
+</div>
+{{template "bottom" .}}{{end}}
+
+{{define "login_status"}}
+<div id="login">
+  <p><b>Waiting for you to log in in the browser window…</b> <span class="muted small">(the window may be behind this one)</span></p>
+  <div class="progress indeterminate"><span></span></div>
+  <div class="log">{{join .Log "\n"}}</div>
+  <form method="post" action="/access/browser/cancel" style="margin-top:8px"><button>Cancel</button></form>
+</div>
+{{end}}

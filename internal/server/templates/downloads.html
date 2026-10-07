@@ -1,0 +1,44 @@
+{{define "downloads"}}
+{{$running := and .P.Job .P.Job.Running}}
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <div>
+      <b>PDF downloads</b> · {{len .Papers}} kept papers
+      <div class="muted small">Access chain: {{join .Chain " → "}} · <a href="/access">{{if not .Base.ProxySet}}set up university proxy access{{else if not .Base.ProxyCookie}}proxy prefix set, session cookie missing{{else}}library access settings{{end}}</a></div>
+    </div>
+    {{if $running}}<form method="post" action="/projects/{{.P.ID}}/cancel"><button>Cancel</button></form>{{else if .PendingPDFs}}<form method="post" action="/projects/{{.P.ID}}/retry-all"><button class="btn-primary" title="Re-run the whole access chain for every kept paper without a PDF (e.g. after configuring the proxy)">Retry all {{.PendingPDFs}} missing</button></form>{{end}}
+  </div>
+  {{if $running}}
+    {{if .P.Job.Total}}<div class="progress"><span style="width:{{pct .P.Job.Progress .P.Job.Total}}%"></span></div><div class="small muted">{{.P.Job.Progress}} / {{.P.Job.Total}} papers · elapsed {{elapsed .P.Job.StartedAt}}</div>{{end}}
+    <p class="small">{{.P.Job.Message}}</p>
+  {{else if .P.Job}}
+    {{if .P.Job.Error}}<p class="err">{{.P.Job.Error}}</p>{{end}}
+  {{end}}
+  {{$ok := 0}}{{range .Papers}}{{if eq .Download.Status "ok"}}{{$ok = 1}}{{end}}{{end}}
+  <table style="margin-top:10px">
+    <thead><tr><th style="width:110px">Status</th><th>Paper</th><th style="width:170px">Method</th><th style="width:120px">File</th></tr></thead>
+    <tbody>
+    {{$pid := .P.ID}}
+    {{range .Papers}}
+      <tr>
+        <td>
+          {{if eq .Download.Status "ok"}}<span class="status-ok">✓ got PDF</span>
+          {{else if eq .Download.Status "failed"}}<span class="status-failed">✗ failed</span>
+            {{if not $running}}<form method="post" action="/projects/{{$pid}}/papers/{{.ID}}/retry"><button class="small">Retry</button></form>
+            <form method="post" action="/projects/{{$pid}}/papers/{{.ID}}/upload" enctype="multipart/form-data" class="small" style="margin-top:4px"><input type="file" name="pdf" accept="application/pdf" required style="width:130px;font-size:11px"><button class="small">Upload</button></form>{{end}}
+          {{else if eq .Download.Status "running"}}<span class="status-running">⟳ trying…</span>
+          {{else}}<span class="muted">queued</span>{{end}}
+        </td>
+        <td>
+          <b>{{.Title}}</b><br><span class="muted small">{{authors .Authors}}{{if .Year}} · {{.Year}}{{end}}{{if .DOI}} · <a href="https://doi.org/{{.DOI}}" target="_blank" rel="noopener">doi</a>{{end}}{{if and $.Base.ProxyPrefix (ne .Download.Status "ok")}}{{if .DOI}} · <a href="{{$.Base.ProxyPrefix}}https://doi.org/{{.DOI}}" target="_blank" rel="noopener">open via proxy ↗</a>{{else if .URL}} · <a href="{{$.Base.ProxyPrefix}}{{.URL}}" target="_blank" rel="noopener">open via proxy ↗</a>{{end}}{{end}}</span>
+          {{if .Download.Attempts}}<details><summary class="small">{{len .Download.Attempts}} attempts</summary><ul class="attempts">{{range .Download.Attempts}}<li>{{if .OK}}✓{{else}}·{{end}} <b>{{.Method}}</b>: {{.Message}}{{if .URL}} <span class="muted">({{.URL}})</span>{{end}}</li>{{end}}</ul></details>{{end}}
+        </td>
+        <td class="small">{{.Download.Method}}</td>
+        <td class="small">{{if .Download.Path}}<a href="/files/{{$pid}}/{{basename .Download.Path}}" target="_blank">{{kb .Download.Bytes}} ↗</a>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{if .P.Job}}<details style="margin-top:8px"><summary class="small">Log</summary><div class="log">{{join .P.Job.Log "\n"}}</div></details>{{end}}
+</div>
+{{end}}

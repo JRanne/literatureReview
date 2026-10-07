@@ -1,0 +1,33 @@
+{{define "concepts"}}{{template "top" (dict "Title" (print .P.Title " · concept matrix") "Base" .Base)}}
+<div class="row" style="justify-content:space-between">
+  <div><h2 style="margin:0">Concept matrix</h2><div class="muted">{{.P.Title}} · {{len .Papers}} included papers · {{len .Concepts}} concepts · {{.Assigned}} papers assigned</div></div>
+  <div class="row">
+    <a class="btn" href="/projects/{{.P.ID}}?view=results">← Project</a>
+    {{if .Concepts}}<a class="btn" href="/projects/{{.P.ID}}/concepts.xlsx">Excel</a><a class="btn" href="/projects/{{.P.ID}}/concepts.csv">CSV</a><a class="btn" href="/projects/{{.P.ID}}/concepts.tex" title="longtable with rotated concept headers; studies cited with \citet{key}">LaTeX</a>{{end}}
+  </div>
+</div>
+{{if .Error}}<p class="err" style="margin-top:10px">{{.Error}}</p>{{end}}
+{{if .Running}}<div id="job" hx-get="/projects/{{.P.ID}}/job" hx-trigger="every 2s" hx-swap="outerHTML" style="margin-top:10px">{{template "job" (dict "P" .P)}}</div>{{end}}
+<div class="card row" style="margin-top:12px; gap:10px; align-items:center">
+  <form method="post" action="/projects/{{.P.ID}}/concepts/build"><button class="btn-primary" {{if or .Running (not .Base.AIEnabled)}}disabled{{end}}>{{if .Concepts}}Re-assign papers{{else}}Build concept matrix{{end}}</button></form>
+  {{if .Concepts}}<form method="post" action="/projects/{{.P.ID}}/concepts/build" onsubmit="return confirm('Propose a new set of concepts and re-assign all papers?')"><input type="hidden" name="rebuild" value="1"><button {{if .Running}}disabled{{end}}>Propose new concepts</button></form>{{end}}
+  <span class="muted small">Webster &amp; Watson concept-centric matrix: Claude proposes 8–14 concepts from the extracted aspects and keyword clusters, then marks which concepts each paper substantively addresses (hover a cell for the note). Uses the master-table extraction and abstracts only; run <i>Extract key aspects</i> first for best results.</span>
+</div>
+{{if .Concepts}}
+<div class="card" style="overflow-x:auto; padding:0">
+<table class="matrix">
+  <thead><tr><th class="sticky">Paper</th>{{range .Concepts}}<th title="{{.Definition}}"><div class="rot">{{.Name}}</div><div class="muted small">{{index $.Counts .Name}}</div></th>{{end}}</tr></thead>
+  <tbody>
+  {{$C := .Concepts}}
+  {{range .Papers}}
+    {{$hits := .Concepts}}
+    <tr><td class="sticky"><b>{{.FirstAuthorSurname}}</b> ({{.Year}})<div class="muted small" title="{{.Title}}">{{.Title}}</div></td>
+    {{range $C}}{{$name := .Name}}{{$found := ""}}{{range $hits}}{{if eq .Name $name}}{{$found = .Note}}{{if eq .Note ""}}{{$found = "✓"}}{{end}}{{end}}{{end}}<td class="cell {{if $found}}hit{{end}}" title="{{$found}}">{{if $found}}●{{end}}</td>{{end}}
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+<details class="card"><summary>Concept definitions</summary><ul>{{range .Concepts}}<li><b>{{.Name}}</b>: {{.Definition}}</li>{{end}}</ul></details>
+{{end}}
+{{template "bottom" .}}{{end}}

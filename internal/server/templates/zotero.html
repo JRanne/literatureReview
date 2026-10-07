@@ -1,0 +1,40 @@
+{{define "zotero"}}{{template "top" (dict "Title" (print .P.Title " · Zotero") "Base" .Base)}}
+<div class="row" style="justify-content:space-between">
+  <div><h2 style="margin:0">Send to Zotero</h2><div class="muted">{{.P.Title}} · {{.Kept}} included papers, {{.WithPDF}} with PDF</div></div>
+  <a class="btn" href="/projects/{{.P.ID}}?view=results">← Project</a>
+</div>
+{{if .Error}}<p class="err" style="margin-top:10px">{{.Error}}</p>{{end}}
+{{if .Message}}<p class="notice" style="margin-top:10px">{{.Message}}</p>{{end}}
+{{if .Running}}<div id="job" hx-get="/projects/{{.P.ID}}/job" hx-trigger="every 2s" hx-swap="outerHTML" style="margin-top:10px">{{template "job" (dict "P" .P)}}</div>
+{{else if .LastLog}}<details class="card" style="margin-top:10px"><summary>Last export log</summary><div class="log">{{join .LastLog "\n"}}</div></details>{{end}}
+
+<div class="card">
+  <h3 style="margin-top:0">Zotero desktop on this computer {{if .Desktop}}<span class="badge oa">running</span>{{else}}<span class="badge drop">not detected</span>{{end}}</h3>
+  <p class="small">The app creates the collection you name (or reuses it), adds each included paper as an item with full metadata, tags, the citation key, a note with the extracted aspects, and stores the PDF in Zotero's own storage (no cloud quota), all through Zotero's local API. The first time, Zotero shows a permission dialog: choose <b>Always Allow</b> so later exports run without asking. Requires Zotero 7 with the local API enabled (Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”).</p>
+  <form method="post" action="/projects/{{.P.ID}}/zotero/send">
+    <input type="hidden" name="mode" value="desktop">
+    <label>Collection name</label>
+    <input type="text" name="collection" list="zotero-collections" value="{{if .Collection}}{{.Collection}}{{else}}{{.DefaultName}}{{end}}" placeholder="e.g. System 1 models review">
+    <datalist id="zotero-collections">{{range .Targets}}{{if ne .Level 0}}<option value="{{.Name}}">{{end}}{{end}}</datalist>
+    {{if .Targets}}<div class="muted small">Existing collections: {{range $i, $t := .Targets}}{{if ne $t.Level 0}}{{if $i}} · {{end}}{{$t.Name}}{{end}}{{end}}</div>{{end}}
+    <div class="row" style="margin-top:10px"><button class="btn-primary" {{if or (not .Desktop) .Running}}disabled{{end}}>Send {{.Kept}} papers to Zotero desktop</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Zotero Web API (creates the collection for you) {{if .WebKeySet}}<span class="badge oa">key set{{if .Web.Username}} · {{.Web.Username}}{{end}}</span>{{end}}</h3>
+  <p class="small">Create a key at <a href="https://www.zotero.org/settings/keys/new" target="_blank" rel="noopener">zotero.org/settings/keys</a> with <i>Allow library access</i> and <i>Allow write access</i>. The app creates a new collection with the name you give, adds the items and notes, and uploads the PDFs to your Zotero storage (counts against the 300 MB free quota); Zotero desktop syncs them down.</p>
+  <form method="post" action="/projects/{{.P.ID}}/zotero/key" class="row" style="gap:8px; align-items:flex-end">
+    <div style="flex:1"><label>API key</label><input type="text" name="api_key" placeholder="{{if .WebKeySet}}(stored; paste to replace){{else}}paste your Zotero API key{{end}}"></div>
+    <div><label>User ID <span class="muted" style="font-weight:normal">(optional)</span></label><input type="text" name="user_id" value="{{.Web.UserID}}" style="width:120px"></div>
+    <button>Verify &amp; save</button>
+    {{if .WebKeySet}}<button name="forget" value="1" class="btn-danger">Forget</button>{{end}}
+  </form>
+  <form method="post" action="/projects/{{.P.ID}}/zotero/send" style="margin-top:10px">
+    <input type="hidden" name="mode" value="web">
+    <label>New collection name</label>
+    <input type="text" name="collection" value="{{if .Collection}}{{.Collection}}{{else}}{{.DefaultName}}{{end}}">
+    <div class="row" style="margin-top:10px"><button class="btn-primary" {{if or (not .WebKeySet) .Running}}disabled{{end}}>Create collection &amp; send {{.Kept}} papers via Web API</button></div>
+  </form>
+</div>
+{{template "bottom" .}}{{end}}

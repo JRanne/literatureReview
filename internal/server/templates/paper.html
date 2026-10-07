@@ -1,0 +1,37 @@
+{{define "paper"}}
+{{$p := .Paper}}{{$pid := .P.ID}}
+<div class="card paper {{$p.Decision}}" id="paper-{{$p.ID}}">
+  <div class="score {{scoreClass $p.RankScore}}" title="{{if $p.HasJev}}Combined relevance score (Claude + Jev){{else}}AI relevance score{{end}}">{{$p.RankScore}}</div>
+  <div>
+    <h4>{{if $p.URL}}<a href="{{$p.URL}}" target="_blank" rel="noopener">{{$p.Title}}</a>{{else}}{{$p.Title}}{{end}}</h4>
+    <div class="by">{{authors $p.Authors}}{{if $p.Year}} · {{$p.Year}}{{end}}{{if $p.Venue}} · <i>{{$p.Venue}}</i>{{end}}</div>
+    <div class="row small" style="margin-top:4px; gap:6px">
+      {{if $p.DOI}}<a href="https://doi.org/{{$p.DOI}}" target="_blank" rel="noopener">doi:{{$p.DOI}}</a>{{end}}
+      {{if $p.Citations}}<span class="badge">{{$p.Citations}} citations</span>{{end}}
+      {{if $p.OpenAccess}}<span class="badge oa">open access</span>{{end}}
+      {{if $p.Preprint}}<span class="badge drop" title="preprint server / repository record, not peer reviewed">preprint</span>{{end}}
+      {{if $p.NonEnglish}}<span class="badge drop" title="not written in English{{if $p.Language}} ({{$p.Language}}){{end}}">non-English</span>{{end}}
+      {{with $p.VenueRating}}<span class="badge {{if or (eq .Tier "top") (eq .Tier "good")}}keep{{else if eq .Tier "below"}}drop{{else if eq .Tier "basic"}}unsure{{end}}" title="{{if .Label}}{{.Label}}{{else}}no registry knows this venue{{end}}">venue: {{.Tier}}{{if .Label}} · {{.Label}}{{end}}</span>{{end}}
+      {{if $p.PMCID}}<span class="badge">PMC</span>{{end}}
+      {{range $p.FoundIn}}<span class="badge">{{sourceLabel .}}</span>{{end}}
+    </div>
+    {{if or $p.AIRationale $p.Jev}}<div class="ai">
+      {{if $p.AIVerdict}}<div><span class="badge {{$p.AIVerdict}}">Claude: {{$p.AIVerdict}} {{$p.AIScore}}</span> {{$p.AIRationale}}</div>{{end}}
+      {{if $p.Jev}}<div style="margin-top:4px">{{if $p.HasJev}}<span class="badge {{$p.Jev.Verdict}}">Jev: {{$p.Jev.Verdict}} {{$p.Jev.Score}}</span>{{else}}<span class="badge">Jev: n/a</span>{{end}} <span class="muted">{{$p.Jev.Detail}}</span>
+        {{if eq $p.Agreement "conflict"}}<span class="badge conflict">screeners disagree — your call</span>{{else if eq $p.Agreement "agree"}}<span class="badge">screeners agree</span>{{end}}</div>{{end}}
+      {{with $p.Adjudication}}<div style="margin-top:4px"><span class="badge {{.Decision}}">3rd reviewer: {{.Decision}} ({{printf "%.0f" (mulf .Confidence 100)}}%)</span> {{.Reason}}</div>{{end}}
+    </div>{{end}}
+    {{if $p.Abstract}}<details><summary>Abstract</summary><div class="abstract">{{$p.Abstract}}</div></details>{{else}}<div class="muted small" style="margin-top:6px">No abstract available.</div>{{end}}
+  </div>
+  <div class="toggle">
+    <button class="{{if eq $p.Decision "keep"}}active-keep{{end}}" hx-post="/projects/{{$pid}}/papers/{{$p.ID}}/decision" hx-vals='{"decision":"keep"}' hx-target="#paper-{{$p.ID}}" hx-swap="outerHTML">✓ Keep</button>
+    <button class="{{if eq $p.Decision "drop"}}active-drop{{end}}" hx-post="/projects/{{$pid}}/papers/{{$p.ID}}/decision" hx-vals='{"decision":"drop"}' hx-target="#paper-{{$p.ID}}" hx-swap="outerHTML">✗ Drop</button>
+    <span class="muted small" style="text-align:center">{{if $p.Decision}}{{$p.Decision}}{{if eq $p.DecisionBy "user"}} · you{{else if eq $p.DecisionBy "ai"}} · AI{{end}}{{else}}undecided{{end}}</span>
+  </div>
+</div>
+{{end}}
+
+{{define "paper_with_counts"}}
+{{template "paper" .}}
+<span class="counts" id="counts" hx-swap-oob="true"><b>{{len .P.Papers}}</b> papers · <span class="badge keep">keep {{.Keep}}</span> <span class="badge drop">drop {{.Drop}}</span> <span class="badge">undecided {{.Undecided}}</span></span>
+{{end}}

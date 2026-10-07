@@ -1,0 +1,222 @@
+{{define "project"}}{{template "top" (dict "Title" .P.Title "Base" .Base)}}
+<div class="row" style="justify-content:space-between">
+  <h2 style="margin:0">{{.P.Title}}</h2>
+  <div class="row">
+    {{if .HasKept}}<a class="btn" href="/projects/{{.P.ID}}/export.bib">Export .bib</a><a class="btn" href="/projects/{{.P.ID}}/export.json">Export JSON</a>{{end}}
+  </div>
+</div>
+<p class="muted">{{.P.Question}}</p>
+<div class="row" style="justify-content:space-between; align-items:center">
+  {{template "stages" .}}
+  <div class="row undo" style="gap:6px">
+    {{if .UndoLabel}}<form method="post" action="/projects/{{.P.ID}}/undo"><input type="hidden" name="view" value="{{.View}}"><button {{if .JobRunning}}disabled{{end}} title="Restores decisions, queries, settings and generated texts to before this action. Files and Zotero exports are not affected.">↶ Undo: {{.UndoLabel}}</button></form>{{end}}
+    {{if .RedoLabel}}<form method="post" action="/projects/{{.P.ID}}/redo"><input type="hidden" name="view" value="{{.View}}"><button {{if .JobRunning}}disabled{{end}}>↷ Redo: {{.RedoLabel}}</button></form>{{end}}
+  </div>
+</div>
+{{if .Error}}<p class="err">{{.Error}}</p>{{end}}
+{{if .Message}}<p class="notice">{{.Message}}</p>{{end}}
+{{if and .JobRunning (ne .View "search") (ne .View "downloads")}}
+  <p class="notice">A <b>{{.JobName}}</b> job is running. {{if eq .JobName "search"}}<a href="?view=search">Watch progress</a>{{else if or (eq .JobName "download") (eq .JobName "retry")}}<a href="?view=downloads">Watch progress</a>{{else}}<a href="?view=results">Watch progress</a>{{end}}.</p>
+{{end}}
+
+{{/* ================= 1 · SETUP ================= */}}
+{{if eq .View "setup"}}
+<div class="card">
+  <form method="post" action="/projects/{{.P.ID}}/settings">
+    <label>Project title</label>
+    <input type="text" name="title" value="{{.P.Title}}">
+    <label>Research question</label>
+    <textarea name="question" required>{{.P.Question}}</textarea>
+    <label>Discipline and audience <span class="muted" style="font-weight:normal">(shapes vocabulary, screening, table and the synthesis register)</span></label>
+    <input type="text" name="discipline" value="{{.P.Discipline}}" placeholder="e.g. Information Systems (IS) research; organisational perspective; target venues ECIS/ICIS/JAIS">
+    <div class="grid">
+      <div><label>Inclusion criteria</label><textarea name="inclusion">{{.P.Inclusion}}</textarea></div>
+      <div><label>Exclusion criteria</label><textarea name="exclusion">{{.P.Exclusion}}</textarea></div>
+    </div>
+    <div class="grid">
+      <div><label>Year from</label><input type="number" name="year_from" value="{{if .P.YearFrom}}{{.P.YearFrom}}{{end}}"></div>
+      <div><label>Year to</label><input type="number" name="year_to" value="{{if .P.YearTo}}{{.P.YearTo}}{{end}}"></div>
+      <div><label>Results per query</label><input type="number" name="max_per_source" value="{{.P.MaxPerSource}}" min="5" max="200"></div>
+      <div><label>Target included papers</label><input type="number" name="target" value="{{.P.Target}}" min="0" max="500"><div class="muted small">Search broadens automatically (up to 2 extra rounds) while below this. 0 disables.</div></div>
+    </div>
+    <label>Databases</label>
+    <div class="checks">{{range .Sources}}<label title="{{.Syntax}}"><input type="checkbox" name="sources" value="{{.Name}}" {{if .Checked}}checked{{end}}> {{.Label}}</label>{{end}}</div>
+    <div class="checks" style="margin-top:8px"><label><input type="checkbox" name="peer_reviewed_only" value="1" {{if .P.PeerReviewedOnly}}checked{{end}}> Peer-reviewed only: exclude preprint servers and repositories (arXiv, SSRN, OSF, Research Square, Zenodo…) from future searches</label>
+    <label><input type="checkbox" name="english_only" value="1" {{if .P.EnglishOnly}}checked{{end}}> English only (reported language, or detected from title and abstract)</label></div>
+    <p class="muted small">Changing the question or criteria does not discard anything. Afterwards you can regenerate queries, re-run the search (new papers are added and screened; known papers and your decisions stay), or re-screen the existing papers against the new criteria.</p>
+    <div class="row" style="margin-top:12px">
+      <button class="btn-primary" {{if .JobRunning}}disabled{{end}}>Save &amp; go to search strategy →</button>
+      {{if .HasPapers}}<form method="post" action="/projects/{{.P.ID}}/reset" onsubmit="return confirm('Delete all papers, queries, decisions and the synthesis for this project? Settings and downloaded files are kept.')" style="margin-left:auto"><button class="btn-danger">Clear all results</button></form>{{end}}
+    </div>
+  </form>
+</div>
+
+{{/* ================= 2 · SEARCH STRATEGY ================= */}}
+{{else if eq .View "search"}}
+  {{if and .JobRunning (eq .JobName "search")}}
+    <div id="job" hx-get="/projects/{{.P.ID}}/job" hx-trigger="every 2s" hx-swap="outerHTML">{{template "job" (dict "P" .P)}}</div>
+  {{end}}
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <b>Queries</b> <span class="muted small">{{len .P.Queries}} over {{.P.Rounds}} round{{if ne .P.Rounds 1}}s{{end}} · {{if .HasPapers}}{{len .P.Papers}} papers collected, {{.Keep}} included{{if .P.Target}} of target {{.P.Target}}{{end}}{{else}}not run yet{{end}}</span>
+      </div>
+      <div class="row">
+        <form method="post" action="/projects/{{.P.ID}}/search"><input type="hidden" name="mode" value="generate"><button class="btn-primary" {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}} {{if .HasQueries}}onclick="return confirm('Replace the current queries with new AI-generated ones and run the search? Known papers and your decisions are kept.')"{{end}}>{{if .HasQueries}}Regenerate queries &amp; search{{else}}Generate queries &amp; search{{end}}</button></form>
+        {{if .HasQueries}}<form method="post" action="/projects/{{.P.ID}}/search"><input type="hidden" name="mode" value="run"><button {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}}>Re-run these queries</button></form>{{end}}
+        {{if .HasPapers}}<form method="post" action="/projects/{{.P.ID}}/search"><input type="hidden" name="mode" value="expand"><button {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}} title="Claude studies which queries worked and what terminology the best papers use, then adds broader queries">Expand search (AI)</button></form>
+        <form method="post" action="/projects/{{.P.ID}}/search"><input type="hidden" name="mode" value="snowball"><button {{if .JobRunning}}disabled{{end}} title="Follow references and citing papers of the kept papers via OpenAlex and screen them">Snowball from kept papers</button></form>
+        <form method="post" action="/projects/{{.P.ID}}/search"><input type="hidden" name="mode" value="rescreen"><button {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}} onclick="return confirm('Re-screen all {{len .P.Papers}} papers against the current question and criteria? Decisions you made by hand are kept; AI-made ones follow the new verdicts.')">Re-screen all papers</button></form>{{end}}
+      </div>
+    </div>
+    {{if .FailedSources}}<p class="err" style="margin-top:10px"><b>Database problems in the last run:</b> {{range $i, $m := .FailedSources}}{{if $i}}<br>{{end}}{{$m}}{{end}}</p>{{end}}
+    {{if .HasQueries}}
+    <table class="queries" style="margin-top:10px">
+      <thead><tr><th>Round</th><th>Database</th><th>Query as sent</th><th>Hits in DB</th><th>Retrieved</th><th title="papers surfaced by this query that rank ≥ 50">Relevant</th><th>Request</th></tr></thead>
+      <tbody>
+      {{range .P.Queries}}<tr>
+        <td>{{.Round}}</td>
+        <td>{{sourceLabel .Source}}</td>
+        <td><span class="query-item">{{.Query}}</span>{{if .Rationale}}<br><span class="muted small">{{.Rationale}}</span>{{end}}{{if .Error}}<br><span class="err small">{{.Error}}</span>{{end}}</td>
+        <td>{{if .Total}}{{.Total}}{{else if eq .Source "crossref"}}<span class="muted" title="CrossRef reports loose relevance matches, not a comparable hit count">n/a</span>{{else if .URL}}0{{else}}–{{end}}</td>
+        <td>{{if .URL}}{{.Results}}{{else}}–{{end}}</td>
+        <td>{{if .URL}}{{.Relevant}}{{else}}–{{end}}</td>
+        <td class="small">{{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener" title="{{.URL}}">open API request ↗</a><details><summary class="small muted">show URL</summary><div class="url">{{.URL}}</div></details>{{else if .Results}}<span class="muted" title="ran before request logging was added">ran (not logged)</span>{{else if .RanAt.IsZero}}<span class="muted">not run yet</span>{{else}}<span class="muted">no request</span>{{end}}</td>
+      </tr>{{end}}
+      </tbody>
+    </table>
+    <p class="muted small">"Hits in DB" is the total the database reported; "Retrieved" is how many were fetched (capped by results per query = {{.P.MaxPerSource}}, doubled on expansion rounds); "Relevant" is how many of those rank ≥ 50 after screening. The request link is the exact API call that was made.</p>
+    {{if and .P.Target .HasPapers (lt .Keep .P.Target)}}<p class="notice">{{.Keep}} of the targeted {{.P.Target}} papers are included. If the question uses specialised or vendor terminology, add inclusion criteria that spell out the standard terms (the screeners judge against them), then <b>Expand search</b> or <b>Snowball</b>.</p>{{end}}
+    {{end}}
+    <details style="margin-top:8px" {{if not .HasQueries}}open{{end}}>
+      <summary>Edit queries by hand</summary>
+      <form method="post" action="/projects/{{.P.ID}}/queries">
+        {{$qt := .QueryText}}
+        {{range .Sources}}{{if .Checked}}
+          <label>{{.Label}} <span class="muted" style="font-weight:normal">— one query per line · syntax: {{.Syntax}}</span></label>
+          <textarea name="q_{{.Name}}" class="query-item" rows="3">{{index $qt .Name}}</textarea>
+        {{end}}{{end}}
+        <div class="row" style="margin-top:10px">
+          <button name="run" value="1" class="btn-primary" {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}}>Save &amp; run search</button>
+          <button name="run" value="0" {{if .JobRunning}}disabled{{end}}>Save only</button>
+        </div>
+      </form>
+    </details>
+    {{if and .P.Job .P.Job.Log}}<details style="margin-top:8px"><summary class="small">Last run log ({{.P.Job.Name}}{{if .P.Job.Error}} · failed{{end}})</summary>{{if .P.Job.Error}}<p class="err small">{{.P.Job.Error}}</p>{{end}}<div class="log">{{join .P.Job.Log "\n"}}</div></details>{{end}}
+  </div>
+  {{if .HasPapers}}<div class="row"><a class="btn btn-primary" href="?view=screening">Go to keep / drop ({{len .P.Papers}} papers) →</a></div>{{end}}
+
+{{/* ================= 3 · KEEP / DROP ================= */}}
+{{else if eq .View "screening"}}
+  <div class="toolbar">
+    <span class="counts" id="counts"><b>{{len .P.Papers}}</b> papers · <span class="badge keep">keep {{.Keep}}</span> <span class="badge drop">drop {{.Drop}}</span> <span class="badge">undecided {{.Undecided}}</span></span>
+    <span class="spacer"></span>
+    {{$f := .Filter}}
+    <a class="btn {{if eq $f "all"}}btn-primary{{end}}" href="?view=screening&filter=all">All</a>
+    <a class="btn {{if eq $f "keep"}}btn-primary{{end}}" href="?view=screening&filter=keep">Keep</a>
+    <a class="btn {{if eq $f "undecided"}}btn-primary{{end}}" href="?view=screening&filter=undecided">Undecided</a>
+    <a class="btn {{if eq $f "drop"}}btn-primary{{end}}" href="?view=screening&filter=drop">Drop</a>
+    {{if .Conflicts}}<a class="btn {{if eq $f "conflict"}}btn-primary{{end}}" href="?view=screening&filter=conflict" title="Claude and Jev gave opposite verdicts">Conflicts {{.Conflicts}}</a>{{end}}
+    {{if .Rated}}<a class="btn {{if eq $f "quality"}}btn-primary{{end}}" href="?view=screening&filter=quality" title="Tier top/good/basic: JUFO ≥ 1, Norwegian level ≥ 1, AIS basket, IS conference, CORE-ranked, or an OpenAlex core (Scopus/WoS-level) source">Quality venues</a>{{end}}
+    {{if .Jufo0}}<a class="btn {{if eq $f "jufo0"}}btn-primary{{end}}" href="?view=screening&filter=jufo0" title="Tier below: JUFO level 0, or a known source with no index, no DOAJ listing and a very low h-index">Below bar ({{.Jufo0}})</a>{{end}}
+    {{if .UnknownVenue}}<a class="btn {{if eq $f "unknownvenue"}}btn-primary{{end}}" href="?view=screening&filter=unknownvenue" title="No registry knows this venue">Unknown venue ({{.UnknownVenue}})</a>{{end}}
+    <form method="post" action="/projects/{{.P.ID}}/bulk" class="row" style="gap:6px">
+      <input type="hidden" name="filter" value="{{$f}}">
+      <button name="action" value="accept-ai" title="Apply the screeners' verdict where they are decisive{{if .Base.JevEnabled}} and agree{{end}}; conflicts and 'unsure' stay undecided">Accept AI suggestions</button>
+      <button name="action" value="keep-undecided">Keep undecided</button>
+      <button name="action" value="drop-undecided">Drop undecided</button>
+      {{if .Jufo0}}<button name="action" value="drop-jufo0" class="btn-danger" title="Drop papers whose venue is below the quality bar">Drop below-bar venues</button>{{end}}
+      {{if .UnknownVenue}}<button name="action" value="drop-unknown-venue" class="btn-danger" title="Drop papers whose venue no registry knows" onclick="return confirm('Drop all papers whose venue is unknown to JUFO, OpenAlex and CORE? Check the Unknown venue filter first.')">Drop unknown venues</button>{{end}}
+    </form>
+    <form method="post" action="/projects/{{.P.ID}}/venues" class="row" style="gap:6px">
+      <input type="hidden" name="back" value="/projects/{{.P.ID}}?view=screening&filter={{$f}}">
+      <button name="scope" value="kept" {{if .JobRunning}}disabled{{end}} title="Rate the kept papers' venues: JUFO (+ Norwegian/Danish levels), OpenAlex core/DOAJ/h-index, CORE conference rank, AIS lists">Rate venues{{if .Unrated}} ({{.Unrated}} kept unrated){{end}}</button>
+      <button name="scope" value="all" {{if .JobRunning}}disabled{{end}} title="…for every screened paper (slower)">all</button>
+      {{if .Rated}}<button name="force" value="1" {{if .JobRunning}}disabled{{end}} title="Re-rate the kept papers">re-rate</button>{{end}}
+    </form>
+    <form method="post" action="/projects/{{.P.ID}}/download">
+      <button class="btn-primary" {{if or (eq .Keep 0) .JobRunning}}disabled{{end}}>{{if .PendingPDFs}}Download {{.PendingPDFs}} missing PDFs →{{else if .HasKept}}All kept PDFs fetched → <span class="small">(go to 4)</span>{{else}}Download kept PDFs →{{end}}</button>
+    </form>
+  </div>
+  {{if and .JobRunning (eq .JobName "venues")}}
+    <div id="job" hx-get="/projects/{{.P.ID}}/job" hx-trigger="every 2s" hx-swap="outerHTML">{{template "job" (dict "P" .P)}}</div>
+  {{end}}
+  {{if and .JobRunning (eq .JobName "adjudicate")}}
+    <div id="job" hx-get="/projects/{{.P.ID}}/job" hx-trigger="every 2s" hx-swap="outerHTML">{{template "job" (dict "P" .P)}}</div>
+  {{else if .Undecided}}
+  <div class="card row" style="gap:14px; align-items:center">
+    <b>{{.Undecided}} undecided.</b>
+    <form method="post" action="/projects/{{.P.ID}}/adjudicate" class="row" style="gap:6px">
+      <button class="btn-primary" {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}} title="A third-reviewer pass: Claude re-reads each undecided abstract with both screeners' assessments and commits to keep or drop (applied when confidence ≥ 60%)">Adjudicate undecided (AI third reviewer)</button>
+      <select name="standard" title="Inclusive: keep when plausibly relevant (you will screen full texts). Strict: keep only clearly relevant papers."><option value="inclusive">inclusive standard</option><option value="strict">strict standard</option></select>
+    </form>
+    <form method="post" action="/projects/{{.P.ID}}/bulk" class="row" style="gap:6px">
+      <input type="hidden" name="action" value="threshold"><input type="hidden" name="filter" value="{{.Filter}}">
+      <span class="small">or by combined score: keep ≥</span><input type="number" name="keep_min" value="65" min="0" max="100" style="width:64px">
+      <span class="small">drop &lt;</span><input type="number" name="drop_max" value="45" min="0" max="100" style="width:64px">
+      <button {{if .JobRunning}}disabled{{end}}>Apply</button>
+    </form>
+    {{if .Preprints}}<form method="post" action="/projects/{{.P.ID}}/bulk"><input type="hidden" name="action" value="drop-preprints"><input type="hidden" name="filter" value="{{.Filter}}"><button class="btn-danger" title="arXiv, SSRN, OSF, Research Square, Zenodo… records are not peer reviewed">Drop {{.Preprints}} preprints</button></form>{{end}}
+    {{if .NonEnglish}}<form method="post" action="/projects/{{.P.ID}}/bulk"><input type="hidden" name="action" value="drop-non-english"><input type="hidden" name="filter" value="{{.Filter}}"><button class="btn-danger" title="language reported by the database, or detected from title and abstract">Drop {{.NonEnglish}} non-English</button></form>{{end}}
+    {{if and .P.Job (eq .P.Job.Name "adjudicate") .P.Job.Log}}<span class="muted small">{{index .P.Job.Log (add (len .P.Job.Log) -1)}}</span>{{end}}
+  </div>
+  {{else if or .Preprints .NonEnglish}}
+  <div class="card row">{{if .Preprints}}<form method="post" action="/projects/{{.P.ID}}/bulk"><input type="hidden" name="action" value="drop-preprints"><input type="hidden" name="filter" value="{{.Filter}}"><button class="btn-danger">Drop {{.Preprints}} preprints (not peer reviewed)</button></form>{{end}}{{if .NonEnglish}}<form method="post" action="/projects/{{.P.ID}}/bulk"><input type="hidden" name="action" value="drop-non-english"><input type="hidden" name="filter" value="{{.Filter}}"><button class="btn-danger">Drop {{.NonEnglish}} non-English</button></form>{{end}}</div>
+  {{end}}
+  {{$P := .P}}
+  {{range .Papers}}{{template "paper" (dict "P" $P "Paper" .)}}{{else}}<p class="muted">No papers match this filter.</p>{{end}}
+  <p class="muted small">Decisions marked <i>you</i> were set by hand and survive re-screening; <i>AI</i> ones follow the screeners' verdict and are updated when you re-screen.{{if .Base.JevEnabled}} Two independent screeners run: Claude ({{.Base.Model}}) and TypeSafe Jev ({{.Base.JevModel}}). A paper is dropped only when both drop it, kept when one keeps it and the other does not object, and left for you when they clash or both are unsure.{{end}}</p>
+
+{{/* ================= 4 · PDFs ================= */}}
+{{else if eq .View "downloads"}}
+  {{if and .JobRunning (or (eq .JobName "download") (eq .JobName "retry"))}}
+    <div id="downloads" hx-get="/projects/{{.P.ID}}/downloads" hx-trigger="every 2s" hx-swap="outerHTML">{{template "downloads" .}}</div>
+  {{else}}
+    <div class="row" style="margin-bottom:12px">
+      <form method="post" action="/projects/{{.P.ID}}/download"><button class="btn-primary" {{if or (eq .PendingPDFs 0) .JobRunning}}disabled{{end}}>{{if .PendingPDFs}}Download {{.PendingPDFs}} missing PDFs{{else}}All kept papers have PDFs{{end}}</button></form>
+      <a class="btn" href="?view=screening">← Change keep / drop</a>
+      {{if ge .StageIdx 3}}<a class="btn" href="?view=results">Table &amp; synthesis →</a>{{end}}
+    </div>
+    <div id="downloads">{{template "downloads" .}}</div>
+  {{end}}
+
+{{/* ================= 5 · RESULTS ================= */}}
+{{else}}
+  {{if and .JobRunning (or (eq .JobName "synthesis") (eq .JobName "extract"))}}
+    <div id="job" hx-get="/projects/{{.P.ID}}/job" hx-trigger="every 2s" hx-swap="outerHTML">{{template "job" (dict "P" .P)}}</div>
+  {{end}}
+  <div class="card toolrow">
+    <a class="btn btn-primary" href="/projects/{{.P.ID}}/table" title="One row per included paper: bibliography, screening, PDF status and the extracted aspects ({{.Extracted}} of {{.Keep}} extracted)">Master table</a>
+    <a class="btn" href="/projects/{{.P.ID}}/concepts" title="Webster &amp; Watson concept-centric matrix">Concept matrix</a>
+    <a class="btn" href="/projects/{{.P.ID}}/keywords" title="Keyword co-occurrence network, VOSviewer export">Keyword map</a>
+    <a class="btn" href="/projects/{{.P.ID}}/prisma" title="PRISMA 2020 flow diagram and methods paragraph">PRISMA</a>
+    <a class="btn" href="/projects/{{.P.ID}}/zotero" title="Send included papers, notes and PDFs to Zotero">Zotero</a>
+    <span class="spacer"></span>
+    <span class="muted small">Export:</span>
+    <a class="btn small" href="/projects/{{.P.ID}}/export.bib">.bib</a>
+    <a class="btn small" href="/projects/{{.P.ID}}/table.xlsx">table .xlsx</a>
+    <a class="btn small" href="/projects/{{.P.ID}}/table.tex">table .tex</a>
+    <a class="btn small" href="/projects/{{.P.ID}}/concepts.xlsx">matrix .xlsx</a>
+    <a class="btn small" href="/projects/{{.P.ID}}/concepts.tex">matrix .tex</a>
+  </div>
+
+  <h3>Background section</h3>
+  <div class="card">
+    <p class="muted small">An academic background / related-work section synthesised from the {{.Keep}} included papers ({{.FullTextCount}} read from full text, the rest from abstracts and the extracted aspects). Citations use the same keys as the exported bibliography, in pandoc form <code>[@key]</code>; the LaTeX export converts them to <code>\citep{}</code>. Model: {{if .P.SynthesisModel}}{{.P.SynthesisModel}}{{else}}{{.Base.Model}}{{end}}{{if .Base.SynthesisModel}} (SYNTHESIS_MODEL){{end}}.</p>
+    {{if and .P.Job .P.Job.Error (eq .P.Job.Name "synthesis")}}<p class="err">{{.P.Job.Error}}</p>{{end}}
+    {{if .P.Synthesis}}
+      <div class="row" style="margin-bottom:10px">
+        <a class="btn" href="/projects/{{.P.ID}}/synthesis.md">Download Markdown</a>
+        <a class="btn" href="/projects/{{.P.ID}}/synthesis.tex">Download LaTeX</a>
+        <a class="btn" href="/projects/{{.P.ID}}/export.bib">bibliography.bib</a>
+        <form method="post" action="/projects/{{.P.ID}}/synthesize" onsubmit="return confirm('Regenerate the section from the currently included papers? The current draft is replaced.')"><button {{if .JobRunning}}disabled{{end}}>Regenerate</button></form>
+        <span class="muted small">drafted {{fmtTime .P.SynthesisAt}}</span>
+      </div>
+      <div class="synth-html">{{markdown .P.Synthesis}}</div>
+    {{else}}
+      <form method="post" action="/projects/{{.P.ID}}/synthesize"><button class="btn-primary" {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}}>Draft background section</button></form>
+      <p class="muted small" style="margin-top:8px">Tip: run <i>Extract key aspects</i> on the master table first; the draft uses those fields as structured evidence.</p>
+    {{end}}
+  </div>
+{{end}}
+{{template "bottom" .}}{{end}}

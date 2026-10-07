@@ -1,0 +1,80 @@
+{{define "table"}}{{template "top" (dict "Title" (print .P.Title " · master table") "Base" .Base)}}
+<div class="row" style="justify-content:space-between">
+  <div>
+    <h2 style="margin:0">Master literature table</h2>
+    <div class="muted">{{.P.Title}} · {{len .Papers}} kept papers · {{.Extracted}} with extracted aspects</div>
+  </div>
+  <div class="row">
+    <a class="btn" href="/projects/{{.P.ID}}?view=results">← Project</a>
+    <a class="btn" href="/projects/{{.P.ID}}/table.xlsx">Export Excel</a>
+    <a class="btn" href="/projects/{{.P.ID}}/table.csv">Export CSV</a>
+    <details style="display:inline-block"><summary class="btn">Export LaTeX…</summary>
+      <form method="get" action="/projects/{{.P.ID}}/table.tex" class="card" style="position:absolute; z-index:5; width:420px; margin-top:6px">
+        <b>Columns for the longtable</b> <span class="muted small">(the study column cites with \citet{key}; keys match bibliography.bib)</span>
+        <div class="checks" style="margin-top:6px">
+          {{range $c := list "study:Study" "year:Year" "venue:Venue" "tier:Venue tier" "objective:Objective" "method:Method" "context:Context" "findings:Key findings" "theory:Theory" "contribution:Contribution" "limitations:Limitations" "relevance:Relevance to RQ" "keywords:Keywords" "score:Screening score"}}{{$k := index (split $c ":") 0}}{{$l := index (split $c ":") 1}}<label><input type="checkbox" name="col" value="{{$k}}" {{if or (eq $k "study") (eq $k "method") (eq $k "context") (eq $k "findings") (eq $k "theory")}}checked{{end}}> {{$l}}</label>{{end}}
+        </div>
+        <input type="hidden" name="cols" id="cols-hidden">
+        <div class="row" style="margin-top:8px"><button class="btn-primary" onclick="document.getElementById('cols-hidden').value=Array.from(this.form.querySelectorAll('input[name=col]:checked')).map(c=>c.value).join(',')">Download .tex</button></div>
+        <p class="muted small">Needs \usepackage{longtable,booktabs,array} and natbib or biblatex (natbib=true). Four or five columns fit a portrait page; use landscape for more.</p>
+      </form>
+    </details>
+    <a class="btn" href="/projects/{{.P.ID}}/export.bib">Export .bib</a>
+  </div>
+</div>
+{{if .Error}}<p class="err" style="margin-top:12px">{{.Error}}</p>{{end}}
+
+{{if .Running}}
+  <div id="job" hx-get="/projects/{{.P.ID}}/job" hx-trigger="every 2s" hx-swap="outerHTML" style="margin-top:12px">{{template "job" (dict "P" .P)}}</div>
+{{else}}
+  <div class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        {{if lt .Extracted (len .Papers)}}
+          <b>{{if .Extracted}}{{len .Papers | printf "%d"}} kept, {{.Extracted}} extracted.{{else}}Aspects not extracted yet.{{end}}</b>
+          <span class="muted small">Claude reads each kept paper's abstract and fills objective, method, context, findings, theory, contribution, limitations and relevance.</span>
+        {{else}}
+          <b>All kept papers extracted.</b> <span class="muted small">Re-extract to redo them (e.g. after changing the research question).</span>
+        {{end}}
+        {{if and .P.Job .P.Job.Error (eq .P.Job.Name "extract")}}<div class="err small" style="margin-top:6px">{{.P.Job.Error}}</div>{{end}}
+      </div>
+      <div class="row">
+        {{if lt .Extracted (len .Papers)}}<form method="post" action="/projects/{{.P.ID}}/extract"><button class="btn-primary" {{if not .Base.AIEnabled}}disabled{{end}}>Extract key aspects{{if .Extracted}} for remaining{{end}}</button></form>{{end}}
+        {{if .Extracted}}<form method="post" action="/projects/{{.P.ID}}/extract" onsubmit="return confirm('Re-run extraction for all kept papers?')"><input type="hidden" name="force" value="1"><button {{if not .Base.AIEnabled}}disabled{{end}}>Re-extract all</button></form>{{end}}
+      </div>
+    </div>
+  </div>
+{{end}}
+
+<div class="tablewrap">
+<table class="master">
+  <thead><tr>
+    <th class="sticky">#</th><th class="sticky">Paper</th><th>Venue</th><th>Method</th><th>Context &amp; data</th><th>Objective</th><th>Key findings</th><th>Theory</th><th>Contribution</th><th>Limitations</th><th>Relevance to RQ</th><th>Keywords</th><th>AI</th><th>PDF</th>
+  </tr></thead>
+  <tbody>
+  {{$pid := .P.ID}}
+  {{range $i, $p := .Papers}}
+    <tr>
+      <td class="sticky">{{add $i 1}}</td>
+      <td class="sticky paper-cell">
+        <b>{{if $p.URL}}<a href="{{$p.URL}}" target="_blank" rel="noopener">{{$p.Title}}</a>{{else}}{{$p.Title}}{{end}}</b>
+        <div class="small muted">{{authors $p.Authors}}{{if $p.Year}} ({{$p.Year}}){{end}}</div>
+        <div class="small">{{if $p.DOI}}<a href="https://doi.org/{{$p.DOI}}" target="_blank" rel="noopener">doi:{{$p.DOI}}</a>{{end}}{{if $p.Citations}} · {{$p.Citations}} cit.{{end}}{{if $p.OpenAccess}} · <span class="badge oa">OA</span>{{end}}</div>
+        {{if $p.Abstract}}<details><summary class="small">Abstract</summary><div class="small">{{$p.Abstract}}</div></details>{{end}}
+      </td>
+      <td class="small">{{$p.Venue}}</td>
+      {{with $p.Extract}}
+        <td>{{.Method}}</td><td>{{.Context}}</td><td>{{.Objective}}</td><td>{{.Findings}}</td><td>{{.Theory}}</td><td>{{.Contribution}}</td><td>{{.Limitations}}</td><td>{{.Relevance}}</td><td class="small">{{join .Keywords ", "}}</td>
+      {{else}}
+        <td colspan="9" class="muted small">not extracted yet</td>
+      {{end}}
+      <td class="small"><span class="badge {{$p.AIVerdict}}">{{$p.AIScore}}</span><div class="muted">{{$p.AIRationale}}</div></td>
+      <td class="small">{{if eq $p.Download.Status "ok"}}<a href="/files/{{$pid}}/{{basename $p.Download.Path}}" target="_blank">PDF ↗</a><div class="muted">{{$p.Download.Method}}</div>{{else if eq $p.Download.Status "failed"}}<span class="status-failed">none</span>{{else}}<span class="muted">—</span>{{end}}</td>
+    </tr>
+  {{else}}
+    <tr><td colspan="14" class="muted">No kept papers.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{template "bottom" .}}{{end}}

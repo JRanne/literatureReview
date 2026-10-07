@@ -1,0 +1,23 @@
+{{define "job"}}
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <div>
+      <b>{{if .P.Job.Phase}}{{if .P.Job.PhaseTotal}}Step {{.P.Job.PhaseNum}} of {{.P.Job.PhaseTotal}} · {{end}}{{.P.Job.Phase}}{{else}}{{.P.Job.Name}} running{{end}}…</b>
+      <span class="muted small">elapsed {{elapsed .P.Job.StartedAt}}</span>
+    </div>
+    <form method="post" action="/projects/{{.P.ID}}/cancel"><button>Cancel</button></form>
+  </div>
+  {{if gt .P.Job.PhaseTotal 1}}
+  <ol class="phases">{{$n := .P.Job.PhaseNum}}{{range seq .P.Job.PhaseTotal}}<li class="{{if lt (add . 1) $n}}done{{else if eq (add . 1) $n}}on{{end}}">step {{add . 1}}</li>{{end}}</ol>
+  {{end}}
+  {{if .P.Job.Total}}
+    <div class="progress"><span style="width:{{pct .P.Job.Progress .P.Job.Total}}%"></span></div>
+    <div class="small muted">{{.P.Job.Progress}} / {{.P.Job.Total}} · {{pct .P.Job.Progress .P.Job.Total}}%</div>
+  {{else}}
+    <div class="progress indeterminate"><span></span></div>
+    <div class="small muted">Waiting for Claude… a single call typically takes 15–60 s with the CLI backend.</div>
+  {{end}}
+  <p>{{.P.Job.Message}}</p>
+  <details open><summary class="small">Log</summary><div class="log">{{join .P.Job.Log "\n"}}</div></details>
+</div>
+{{end}}
