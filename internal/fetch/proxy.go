@@ -20,6 +20,8 @@ type Proxy struct {
 	client *http.Client
 	ua     string
 	hasCk  bool
+	// session is the chain-wide expiry flag (set by Chain.SetProxy).
+	session *SessionState
 }
 
 // NewProxy builds the proxy fetcher. prefix looks like
@@ -62,6 +64,9 @@ func (f *Proxy) Fetch(ctx context.Context, p *model.Paper) (*Result, error) {
 	if !f.hasCk {
 		return nil, fmt.Errorf("%w: proxy session cookie not set (Library access page)", ErrNotApplicable)
 	}
+	if f.session.Expired() {
+		return nil, fmt.Errorf("%w: %s", ErrSessionExpired, skipMsg)
+	}
 	hdr := browserHeaders()
 	var errs []string
 	// 1. publisher patterns through the proxy
@@ -80,8 +85,9 @@ func (f *Proxy) Fetch(ctx context.Context, p *model.Paper) (*Result, error) {
 	}
 	errs = append(errs, err.Error())
 	msg := strings.Join(errs, "; ")
-	if strings.Contains(msg, "/login") || strings.Contains(msg, "login.") {
-		return nil, fmt.Errorf("proxy redirected to login; the session cookie is probably expired or invalid (%s)", msg)
+	if isLoginRedirect(msg) {
+		f.session.MarkExpired(msg)
+		return nil, fmt.Errorf("%w: proxy redirected to its login page (%s)", ErrSessionExpired, msg)
 	}
 	return nil, fmt.Errorf("%s via proxy; %s", describe(pats), msg)
 }
@@ -99,12 +105,24 @@ func (f *Proxy) Test(ctx context.Context) (string, error) {
 	}
 	fin := pg.finalURL
 	switch {
-	case strings.Contains(fin, "/login") || strings.Contains(strings.ToLower(fin), "login."):
-		return fin, fmt.Errorf("proxy sent us to a login page: the cookie is not accepted or has expired")
+	case isLoginRedirect(fin):
+		f.session.MarkExpired("access test landed on " + shortURL(fin))
+		return fin, fmt.Errorf("%w: the proxy sent us to its login page; the cookie is not accepted or has expired", ErrSessionExpired)
 	case pg.status >= 400:
 		return fin, fmt.Errorf("HTTP %d from %s", pg.status, shortURL(fin))
 	}
+	f.session.Reset()
 	return fin, nil
+}
+
+// Session exposes the shared expiry state (nil-safe).
+func (f *Proxy) Session() *SessionState { return f.session }
+
+// isLoginRedirect recognises EZproxy and SSO login URLs in an error message
+// or final URL.
+func isLoginRedirect(s string) bool {
+	l := strings.ToLower(s)
+	return strings.Contains(l, "/login") || strings.Contains(l, "login.") || strings.Contains(l, "sso.") || strings.Contains(l, "/saml") || strings.Contains(l, "/idp/")
 }
 
 // HasCookie reports whether a session cookie is configured.

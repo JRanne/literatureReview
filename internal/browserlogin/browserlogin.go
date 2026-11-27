@@ -58,6 +58,9 @@ type Session struct {
 	ProxyHost string
 	// Match decides whether a cookie is the session cookie we need.
 	Match func(c Cookie) bool
+	// Ignore lists cookies known to be stale (the previously saved session):
+	// they are never accepted, even if the profile still carries them.
+	Ignore []Cookie
 	// Poll interval and overall timeout.
 	Poll    time.Duration
 	Timeout time.Duration
@@ -152,15 +155,36 @@ func (s *Session) RunCookies(ctx context.Context) (string, []Cookie, error) {
 	deadline := time.Now().Add(s.Timeout)
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
+	// Cookies that exist before the user has logged in are leftovers of an
+	// expired session (the profile keeps them across restarts); accepting
+	// one would end the flow instantly with a dead cookie.
+	stale := map[string]bool{}
+	for _, c := range s.Ignore {
+		stale[c.Name+"="+c.Value] = true
+	}
+	first := true
 	for {
 		cookies, err := s.getCookies()
 		if err != nil {
 			return "", nil, fmt.Errorf("devtools: %w", err)
 		}
+		if first {
+			first = false
+			n := 0
+			for _, c := range cookies {
+				if s.Match(c) && !stale[c.Name+"="+c.Value] {
+					stale[c.Name+"="+c.Value] = true
+					n++
+				}
+			}
+			if n > 0 {
+				s.logf("Ignoring %d stale proxy cookie(s) left from an earlier session; waiting for a fresh login.", n)
+			}
+		}
 		var parts []string
 		var matched []Cookie
 		for _, c := range cookies {
-			if s.Match(c) {
+			if s.Match(c) && !stale[c.Name+"="+c.Value] {
 				parts = append(parts, c.Name+"="+c.Value)
 				matched = append(matched, c)
 			}

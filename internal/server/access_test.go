@@ -102,11 +102,15 @@ func TestAccessSettingsAndUpload(t *testing.T) {
 	}
 }
 
-// A fake browser that immediately reports an ezproxy cookie over the
-// DevTools pipe, so the whole login flow can run without a display.
+// A fake browser speaking the DevTools pipe, so the whole login flow can run
+// without a display. Like a real profile before the user has signed in, the
+// first Storage.getCookies poll returns nothing (cookies present at that
+// point are treated as stale leftovers); the ezproxy cookie appears from the
+// second poll on, as if the login had just completed.
 const fakeChrome = `#!/usr/bin/env python3
 import os, json, sys
 r = os.fdopen(3, 'rb'); w = os.fdopen(4, 'wb'); buf = b''
+calls = 0
 while True:
     ch = r.read(1)
     if not ch: sys.exit(0)
@@ -114,7 +118,9 @@ while True:
     m = json.loads(buf.decode()); buf = b''
     if m['method'] == 'Browser.close':
         w.write(json.dumps({'id': m['id'], 'result': {}}).encode() + b'\x00'); w.flush(); sys.exit(0)
-    w.write(json.dumps({'id': m['id'], 'result': {'cookies': [{'name': 'ezproxy', 'value': 'FROMBROWSER', 'domain': '127.0.0.1', 'expires': 0}]}}).encode() + b'\x00'); w.flush()
+    calls += 1
+    cookies = [] if calls < 2 else [{'name': 'ezproxy', 'value': 'FROMBROWSER', 'domain': '127.0.0.1', 'expires': 0}]
+    w.write(json.dumps({'id': m['id'], 'result': {'cookies': cookies}}).encode() + b'\x00'); w.flush()
 `
 
 func TestBrowserLoginFlow(t *testing.T) {

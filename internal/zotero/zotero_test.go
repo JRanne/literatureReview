@@ -104,7 +104,7 @@ func TestWebFlow(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		switch {
 		case r.URL.Path == "/keys/current":
-			w.Write([]byte(`{"username":"juuso","userID":12345}`))
+			w.Write([]byte(`{"username":"alice","userID":12345}`))
 		case r.URL.Path == "/users/12345/collections":
 			w.Write([]byte(`{"successful":{"0":{"key":"COLL1"}},"success":{"0":"COLL1"},"failed":{}}`))
 		case r.URL.Path == "/users/12345/items":
@@ -134,7 +134,7 @@ func TestWebFlow(t *testing.T) {
 	defer srv.Close()
 	wc := NewWeb("", "k")
 	wc.Base = srv.URL
-	if u, err := wc.Verify(context.Background()); err != nil || u != "juuso" || wc.UserID != "12345" {
+	if u, err := wc.Verify(context.Background()); err != nil || u != "alice" || wc.UserID != "12345" {
 		t.Fatalf("verify: %s %v", u, err)
 	}
 	key, err := wc.CreateCollection(context.Background(), "System 1 review")

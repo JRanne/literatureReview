@@ -41,12 +41,14 @@ var ErrNotApplicable = errors.New("not applicable")
 // Chain runs fetchers in order.
 type Chain struct {
 	Fetchers []Fetcher
+	// Session is shared by the proxy-dependent stages (see SessionState).
+	Session *SessionState
 }
 
 // NewChain builds the default chain from configuration.
 func NewChain(cfg config.Config) *Chain {
 	client := newClient(nil)
-	ch := &Chain{}
+	ch := &Chain{Session: &SessionState{}}
 	ch.Fetchers = append(ch.Fetchers,
 		&MetadataOA{client: client, ua: cfg.UserAgent},
 		&EuropePMC{client: client, ua: cfg.UserAgent},
@@ -76,6 +78,7 @@ func (c *Chain) SetProxy(px *Proxy) {
 		}
 	}
 	if px != nil {
+		px.session = c.Session
 		kept = append(kept, px)
 	}
 	if browser != nil {
@@ -121,9 +124,14 @@ func (c *Chain) Run(ctx context.Context, p *model.Paper, dir string) model.Downl
 		cancel()
 		at := model.Attempt{Method: f.Name(), At: time.Now()}
 		if err != nil {
-			if errors.Is(err, ErrNotApplicable) {
+			switch {
+			case errors.Is(err, ErrSessionExpired):
+				// The paper is not lost: it is retried once a login happened.
+				res.NeedsLogin = true
+				at.Message = err.Error()
+			case errors.Is(err, ErrNotApplicable):
 				at.Message = "skipped: " + err.Error()
-			} else {
+			default:
 				at.Message = err.Error()
 			}
 			res.Attempts = append(res.Attempts, at)

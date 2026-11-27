@@ -32,6 +32,7 @@
       How to get it: 1) open a proxied link in your browser and log in (Haka/SSO); 2) press F12 → <i>Application</i> (Chrome) or <i>Storage</i> (Firefox) → <i>Cookies</i> → the proxy domain; 3) copy the cookie named <code>ezproxy</code> (sometimes also <code>ezproxyl</code>/<code>ezproxyn</code>; paste them as <code>name=value; name2=value2</code>). You can also paste a <code>cookies.txt</code> export. Sessions usually expire after a few hours of inactivity; when downloads start failing with "redirected to login", paste a fresh cookie. The cookie is stored only in <code>data/settings.json</code> on this machine.
     </div>
     {{if .A.LastTestAt}}<p class="small">Last access test {{fmtTime .A.LastTestAt}}: {{if .A.LastTestOK}}<span class="status-ok">passed</span>{{else}}<span class="status-failed">failed</span>{{end}} — {{.A.LastTestMsg}}</p>{{end}}
+    {{if .SessionExpired}}<p class="err small"><b>Session expired</b>{{if .SessionAt}} (noticed {{fmtTime .SessionAt}}){{end}}: downloads that need the proxy are paused and resume automatically after you log in above or paste a fresh cookie. {{.SessionMsg}}</p>{{end}}
     <div class="row" style="margin-top:12px">
       <button class="btn-primary" name="test" value="1">Save &amp; test access</button>
       <button name="test" value="0">Save</button>

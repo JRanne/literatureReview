@@ -37,4 +37,16 @@
     <div class="row" style="margin-top:10px"><button class="btn-primary" {{if or (not .WebKeySet) .Running}}disabled{{end}}>Create collection &amp; send {{.Kept}} papers via Web API</button></div>
   </form>
 </div>
+
+<div class="card">
+  <h3 style="margin-top:0">Add individual references</h3>
+  <p class="small">For papers that are not in this project, e.g. the classics a reviewer expects or the sources behind a <i>[CITE]</i> placeholder. One reference per line: a DOI, a doi.org or openalex.org link, or a title. Each is looked up in OpenAlex, its PDF is fetched through the same access chain (open access → publisher → university library), and the item, metadata and PDF are filed in the collection below through Zotero desktop.</p>
+  <form method="post" action="/projects/{{.P.ID}}/zotero/add">
+    <label>References</label>
+    <textarea name="refs" rows="5" placeholder="10.2307/249689&#10;Training language models to follow instructions with human feedback&#10;https://doi.org/10.1145/3571730" style="width:100%;font-family:monospace;font-size:12px"></textarea>
+    <label style="margin-top:8px">Collection</label>
+    <input type="text" name="collection" list="zotero-collections" value="{{if .Collection}}{{.Collection}}{{else}}{{.DefaultName}}{{end}}">
+    <div class="row" style="margin-top:10px"><button class="btn-primary" {{if or (not .Desktop) .Running}}disabled{{end}}>Look up, download and add to Zotero</button>{{if not .Desktop}}<span class="muted small">Zotero desktop is not running</span>{{end}}</div>
+  </form>
+</div>
 {{template "bottom" .}}{{end}}

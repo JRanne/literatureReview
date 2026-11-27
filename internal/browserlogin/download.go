@@ -49,6 +49,18 @@ func looksLikeLogin(u string) bool {
 	return strings.Contains(l, "/login") || strings.Contains(l, "sso.") || strings.Contains(l, "shibboleth") || strings.Contains(l, "login-actions") || strings.Contains(l, "/idp/") || strings.Contains(l, "/saml")
 }
 
+// loginFormShown recognises URLs at which the SSO has rendered its login
+// form (Keycloak "login-actions"): the session is definitely gone, so there
+// is no point in waiting for an automatic redirect back.
+func loginFormShown(u string) bool {
+	l := strings.ToLower(u)
+	return strings.Contains(l, "login-actions") || strings.Contains(l, "/password")
+}
+
+// loginGracePeriod is how long an intermediate SSO redirect may take to come
+// back on its own before it is treated as "not logged in".
+var loginGracePeriod = 6 * time.Second
+
 // DownloadResult carries the captured PDF.
 type DownloadResult struct {
 	URL  string
@@ -167,6 +179,9 @@ func (d *Downloader) fetch(ctx context.Context, url string) (*DownloadResult, er
 	defer clickTick.Stop()
 	clicks := 0
 	lastURL := url
+	// A login URL is not final: an SSO that still remembers the profile
+	// redirects back within a few seconds, so give it a short grace period.
+	var loginGrace <-chan time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -179,6 +194,11 @@ func (d *Downloader) fetch(ctx context.Context, url string) (*DownloadResult, er
 			}
 		case <-deadline:
 			return nil, fmt.Errorf("no PDF response within %s (last page: %s)", timeout, shorten(lastURL))
+		case <-loginGrace:
+			if looksLikeLogin(lastURL) && !strings.HasPrefix(lastURL, url) {
+				return nil, fmt.Errorf("redirected to a login page (%s): no valid session for this host", shorten(lastURL))
+			}
+			loginGrace = nil
 		case <-clickTick.C:
 			if clicks < 4 {
 				clicks++
@@ -218,7 +238,12 @@ func (d *Downloader) fetch(ctx context.Context, url string) (*DownloadResult, er
 				if json.Unmarshal(ev.Params, &p) == nil && p.Frame.ParentID == "" && p.Frame.URL != "" {
 					lastURL = p.Frame.URL
 					if looksLikeLogin(lastURL) && !strings.HasPrefix(lastURL, url) {
-						return nil, fmt.Errorf("redirected to a login page (%s): no valid session for this host", shorten(lastURL))
+						if loginFormShown(lastURL) {
+							return nil, fmt.Errorf("redirected to a login page (%s): no valid session for this host", shorten(lastURL))
+						}
+						if loginGrace == nil {
+							loginGrace = time.After(loginGracePeriod)
+						}
 					}
 				}
 			case "Fetch.requestPaused":

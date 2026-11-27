@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -350,4 +351,52 @@ func clampLimit(n, max int) int {
 		return max
 	}
 	return n
+}
+
+// Lookup resolves one reference to a paper via OpenAlex. ref may be a DOI
+// (bare or as a doi.org URL), an OpenAlex work id or URL, or a free-text
+// title (the best search hit is returned).
+func (s *OpenAlex) Lookup(ctx context.Context, ref string) (*model.Paper, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return nil, fmt.Errorf("empty reference")
+	}
+	q := url.Values{}
+	q.Set("select", oaSelect)
+	s.auth(q)
+	var works []oaWork
+	switch {
+	case strings.Contains(ref, "10.") && strings.Contains(ref, "/") && !strings.Contains(ref, " "):
+		doi := model.NormalizeDOI(ref)
+		var w oaWork
+		if err := getJSON(ctx, s.client, "https://api.openalex.org/works/https://doi.org/"+url.PathEscape(doi)+"?"+q.Encode(), s.ua, nil, &w); err != nil {
+			return nil, fmt.Errorf("DOI %s: %w", doi, err)
+		}
+		works = []oaWork{w}
+	case regexp.MustCompile(`(?i)^(https?://openalex\.org/)?W\d+$`).MatchString(ref):
+		id := ref[strings.LastIndex(ref, "/")+1:]
+		var w oaWork
+		if err := getJSON(ctx, s.client, "https://api.openalex.org/works/"+id+"?"+q.Encode(), s.ua, nil, &w); err != nil {
+			return nil, fmt.Errorf("OpenAlex %s: %w", id, err)
+		}
+		works = []oaWork{w}
+	default:
+		q.Set("search", ref)
+		q.Set("per-page", "1")
+		var resp struct {
+			Results []oaWork `json:"results"`
+		}
+		if err := getJSON(ctx, s.client, "https://api.openalex.org/works?"+q.Encode(), s.ua, nil, &resp); err != nil {
+			return nil, fmt.Errorf("title search %q: %w", ref, err)
+		}
+		if len(resp.Results) == 0 {
+			return nil, fmt.Errorf("no OpenAlex record matches %q", ref)
+		}
+		works = resp.Results[:1]
+	}
+	ps := s.toPapers(works)
+	if len(ps) == 0 || ps[0].Title == "" {
+		return nil, fmt.Errorf("OpenAlex returned no usable record for %q", ref)
+	}
+	return ps[0], nil
 }

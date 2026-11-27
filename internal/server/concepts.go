@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"literaturereview/internal/ai"
 	"literaturereview/internal/keywords"
 	"literaturereview/internal/model"
 )
@@ -66,7 +67,7 @@ func (s *Server) handleConceptsBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.runJob(id, "concepts", func(ctx context.Context, lg jobLogger) error {
-		client := s.ai.WithModel(s.cfg.SynthesisModel)
+		client := s.client(ai.StepConcepts, &snap)
 		concepts := snap.Concepts
 		if rebuild || len(concepts) == 0 {
 			lg.phase(1, 2, "Proposing concepts", 0)

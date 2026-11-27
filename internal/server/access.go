@@ -50,6 +50,10 @@ func (l *loginState) add(m string) {
 // handleAccessBrowser launches the browser login flow in the background.
 func (s *Server) handleAccessBrowser(w http.ResponseWriter, r *http.Request) {
 	a := s.loadAccess()
+	back := "/access"
+	if ret := r.FormValue("return"); strings.HasPrefix(ret, "/") && !strings.HasPrefix(ret, "//") {
+		back = ret
+	}
 	if strings.TrimSpace(a.ProxyPrefix) == "" {
 		http.Redirect(w, r, "/access?error="+urlEsc("set the proxy prefix first"), http.StatusSeeOther)
 		return
@@ -67,7 +71,7 @@ func (s *Server) handleAccessBrowser(w http.ResponseWriter, r *http.Request) {
 	s.login.mu.Lock()
 	if s.login.running {
 		s.login.mu.Unlock()
-		http.Redirect(w, r, "/access", http.StatusSeeOther)
+		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -79,6 +83,7 @@ func (s *Server) handleAccessBrowser(w http.ResponseWriter, r *http.Request) {
 		ProfileDir: filepath.Join(s.store.Dir(), "browser-profile"),
 		LoginURL:   a.ProxyPrefix + target,
 		ProxyHost:  host,
+		Ignore:     s.browserCookies(), // the saved session is what we are replacing
 		Log:        s.login.add,
 	}
 	go func() {
@@ -117,9 +122,10 @@ func (s *Server) handleAccessBrowser(w http.ResponseWriter, r *http.Request) {
 		}
 		a.LastTestOK, a.LastTestMsg = true, "reached "+fin
 		_ = s.saveAccess(a)
-		finish(true, "University access is working (reached "+fin+"). You can now retry missing PDFs.")
+		finish(true, "University access is working (reached "+fin+"). Papers that were waiting for a login are being retried.")
+		s.afterSessionRefresh()
 	}()
-	http.Redirect(w, r, "/access", http.StatusSeeOther)
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 func (s *Server) handleAccessBrowserCancel(w http.ResponseWriter, r *http.Request) {
@@ -190,24 +196,28 @@ func (s *Server) applyAccess(a accessSettings) error {
 		return err
 	}
 	s.chain.SetProxy(px)
+	s.chain.Session.Reset() // a new cookie gets a fresh chance
 	return nil
 }
 
 type accessData struct {
-	Base         baseData
-	A            accessSettings
-	Chain        []string
-	Error        string
-	Message      string
-	CookieSet    bool
-	Browser      string
-	LoginRunning bool
-	LoginDone    bool
-	LoginOK      bool
-	LoginMessage string
-	LoginLog     []string
-	ScimagoCount int
-	ScimagoSet   bool
+	Base           baseData
+	A              accessSettings
+	Chain          []string
+	Error          string
+	Message        string
+	CookieSet      bool
+	Browser        string
+	LoginRunning   bool
+	LoginDone      bool
+	LoginOK        bool
+	LoginMessage   string
+	LoginLog       []string
+	ScimagoCount   int
+	ScimagoSet     bool
+	SessionExpired bool
+	SessionMsg     string
+	SessionAt      time.Time
 }
 
 func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
@@ -218,6 +228,7 @@ func (s *Server) handleAccess(w http.ResponseWriter, r *http.Request) {
 		d.Browser = filepath.Base(bin)
 	}
 	d.LoginRunning, d.LoginDone, d.LoginOK, d.LoginMessage, d.LoginLog, _ = s.login.snapshot()
+	d.SessionExpired, d.SessionMsg, d.SessionAt = s.chain.Session.Status()
 	d.ScimagoCount, d.ScimagoSet = s.scimagoInfo()
 	s.render(w, "access", d)
 }
@@ -290,6 +301,7 @@ func (s *Server) handleAccessTest(w http.ResponseWriter, r *http.Request) {
 	}
 	a.LastTestOK, a.LastTestMsg = true, "reached "+fin
 	_ = s.saveAccess(a)
+	go s.afterSessionRefresh()
 	http.Redirect(w, r, "/access?msg="+urlEsc("Access test passed: the proxy session is valid ("+fin+")"), http.StatusSeeOther)
 }
 

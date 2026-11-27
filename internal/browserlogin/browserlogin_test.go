@@ -93,3 +93,28 @@ func TestProxyHost(t *testing.T) {
 		t.Fatal(h, err)
 	}
 }
+
+// A cookie that is already in the profile when the browser opens (or that
+// matches the saved session) must not end the login flow.
+func TestRunIgnoresStaleCookie(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "fakechrome")
+	// Always report the old cookie; report the new one only from the 3rd poll.
+	script := strings.Replace(fakeBrowser,
+		"cookies = [] if calls < 3 else [",
+		"cookies = [{'name': 'ezproxy', 'value': 'OLD', 'domain': '.ezproxy.utu.fi'}] + ([] if calls < 3 else [", 1)
+	script = strings.Replace(script, "]\n        w.write", "])\n        w.write", 1)
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := &Session{Binary: bin, ProfileDir: filepath.Join(dir, "profile"), LoginURL: "https://ezproxy.utu.fi/login?url=https://x", ProxyHost: "ezproxy.utu.fi", Poll: 20 * time.Millisecond, Timeout: 5 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cookie, err := s.Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(cookie, "OLD") || !strings.Contains(cookie, "ezproxy=") {
+		t.Fatalf("stale cookie accepted: %q", cookie)
+	}
+}

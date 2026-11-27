@@ -11,6 +11,7 @@
       {{if $p.OpenAccess}}<span class="badge oa">open access</span>{{end}}
       {{if $p.Preprint}}<span class="badge drop" title="preprint server / repository record, not peer reviewed">preprint</span>{{end}}
       {{if $p.NonEnglish}}<span class="badge drop" title="not written in English{{if $p.Language}} ({{$p.Language}}){{end}}">non-English</span>{{end}}
+      {{if $p.NotRetrieved}}<span class="badge drop" title="passed screening but no full text could be obtained; removed from the analysis (PRISMA: report not retrieved)">no full text</span>{{end}}
       {{with $p.VenueRating}}<span class="badge {{if or (eq .Tier "top") (eq .Tier "good")}}keep{{else if eq .Tier "below"}}drop{{else if eq .Tier "basic"}}unsure{{end}}" title="{{if .Label}}{{.Label}}{{else}}no registry knows this venue{{end}}">venue: {{.Tier}}{{if .Label}} · {{.Label}}{{end}}</span>{{end}}
       {{if $p.PMCID}}<span class="badge">PMC</span>{{end}}
       {{range $p.FoundIn}}<span class="badge">{{sourceLabel .}}</span>{{end}}

@@ -191,7 +191,8 @@ func (s *Server) handleExtract(w http.ResponseWriter, r *http.Request) {
 	}
 	err := s.runJob(id, "extract", func(ctx context.Context, lg jobLogger) error {
 		lg.phase(1, 1, "Extracting key aspects", len(todo))
-		lg.log("Extracting key aspects of %d kept papers with Claude (%s, %s), %d per call, 3 calls at a time…", len(todo), s.ai.BackendName(), s.ai.ModelLabel(), 6)
+		client := s.client(ai.StepExtraction, &snap)
+		lg.log("Extracting key aspects of %d kept papers with Claude (%s, %s), %d per call, 3 calls at a time…", len(todo), client.BackendName(), client.ModelLabel(), 6)
 		per := 9000
 		ev := map[string]ai.Evidence{}
 		for _, e := range s.evidenceFor(ctx, id, todo, per) {
@@ -204,7 +205,7 @@ func (s *Server) handleExtract(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		lg.log("Reading %d papers from full text and %d from abstracts.", full, len(todo)-full)
-		err := s.ai.ExtractPapers(ctx, &snap, todo, ev, func(done, total int) {
+		err := client.ExtractPapers(ctx, &snap, todo, ev, func(done, total int) {
 			lg.progress(done, total)
 			lg.log("Extracted %d/%d", done, total)
 			// Persist incrementally so a cancel keeps what was done.

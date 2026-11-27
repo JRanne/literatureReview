@@ -101,6 +101,29 @@ func resolvePII(ctx context.Context, client *http.Client, doi, ua string) string
 	return ""
 }
 
+// resolveDOI follows the DOI redirect chain and returns the publisher URL
+// ("" when the resolver cannot be reached).
+func resolveDOI(ctx context.Context, client *http.Client, doi, ua string) string {
+	if doi == "" {
+		return ""
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, "https://doi.org/"+doi, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("User-Agent", ua)
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	resp.Body.Close()
+	fin := resp.Request.URL.String()
+	if strings.Contains(fin, "doi.org/") {
+		return ""
+	}
+	return fin
+}
+
 // resolveIEEE follows the DOI to IEEE Xplore and extracts the document id.
 func resolveIEEE(ctx context.Context, client *http.Client, doi, ua string) string {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, "https://doi.org/"+doi, nil)
