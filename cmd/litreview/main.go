@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -42,7 +43,7 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
-		log.Printf("litreview listening on http://localhost%s (data: %s)", cfg.Addr, cfg.DataDir)
+		log.Printf("litreview listening on %s (data: %s)", listenURL(cfg.Addr), cfg.DataDir)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("listen: %v", err)
 		}
@@ -54,4 +55,13 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)
+}
+
+// listenURL turns a listen address into a URL to open: ":8080" listens on
+// every interface and is reached at localhost; "127.0.0.1:9000" is kept.
+func listenURL(addr string) string {
+	if strings.HasPrefix(addr, ":") {
+		return "http://localhost" + addr
+	}
+	return "http://" + addr
 }

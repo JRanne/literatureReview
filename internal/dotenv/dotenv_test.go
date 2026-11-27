@@ -3,6 +3,7 @@ package dotenv
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,7 +54,7 @@ func TestLoadDotEnvMissingFile(t *testing.T) {
 }
 
 func TestParseLineEmptyValueWithComment(t *testing.T) {
-	// .env.example documents empty settings this way; the comment must not
+	// .example.env documents empty settings this way; the comment must not
 	// become the value (an "API key" of "# leave empty…" selects the API).
 	for _, line := range []string{"KEY=                # leave empty", "KEY= #x", "KEY=\t# tab"} {
 		k, v, ok := parseDotEnvLine(line)
@@ -67,5 +68,27 @@ func TestParseLineHashWithoutSpaceIsValue(t *testing.T) {
 	// As in a shell, "#" only starts a comment after whitespace.
 	if _, v, _ := parseDotEnvLine("KEY=#x"); v != "#x" {
 		t.Fatalf("KEY=#x → %q, want #x", v)
+	}
+}
+
+// The shipped template must parse cleanly: no comment may leak into a value.
+func TestExampleEnvParses(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", ".example.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, line := range strings.Split(string(b), "\n") {
+		k, v, ok := parseDotEnvLine(line)
+		if !ok {
+			continue
+		}
+		n++
+		if strings.Contains(v, "#") || strings.Contains(v, " ") {
+			t.Errorf("%s parses as %q", k, v)
+		}
+	}
+	if n < 20 {
+		t.Fatalf("only %d settings parsed from .example.env", n)
 	}
 }

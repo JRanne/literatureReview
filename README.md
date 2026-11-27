@@ -30,6 +30,7 @@ override any decision, undo. Nothing is thrown away unless you ask.
 ## Contents
 
 - [Quick start](#quick-start)
+- [Setting up .env](#setting-up-env)
 - [Doing a review, step by step](#doing-a-review-step-by-step)
 - [How to…](#how-to)
 - [Reference](#reference)
@@ -58,23 +59,19 @@ override any decision, undo. Nothing is thrown away unless you ask.
 ### 2. Configure
 
 ```bash
-cp .env.example .env
+cp .example.env .env
 $EDITOR .env          # set at least CONTACT_EMAIL
 ```
 
-The app reads `.env` from the working directory on start-up. Anything already
-set in your shell wins over the file. The minimal setup with a Claude
-subscription is:
+The only required value is your e-mail address. With a logged-in Claude CLI
+that is all you need to start:
 
 ```bash
 CONTACT_EMAIL=you@university.fi
 ```
 
-With an API key instead, add `ANTHROPIC_API_KEY=sk-ant-…`. For all options see
-[Configuration](#configuration).
-
-Recommended free keys: `S2_API_KEY` (Semantic Scholar's shared anonymous pool
-often returns 429) and `OPENALEX_API_KEY` (lifts the daily credit budget).
+[Setting up .env](#setting-up-env) below walks through every value and where
+to get each key.
 
 ### 3. Run
 
@@ -91,6 +88,135 @@ All state lives in `data/`: one JSON file per project, plus
 `data/<project>/pdfs/`. Back up that folder to keep your reviews.
 
 ---
+
+## Setting up .env
+
+All settings live in a file called `.env` in the folder you start the app
+from. The repository ships a commented template, `.example.env`; copy it and
+fill in the values you need:
+
+```bash
+cp .example.env .env
+```
+
+**Format rules**
+
+- One `KEY=value` per line, with no spaces around `=` and no quotes needed:
+  `CONTACT_EMAIL=you@utu.fi`.
+- Leave a value empty (`S2_API_KEY=`) to use the default or switch the
+  feature off.
+- A `#` after a space starts a comment: `ADDR=:8080   # listen address`.
+- A variable already set in your shell wins over the file, so
+  `ADDR=:9090 ./litreview` overrides `.env` once.
+- `.env` holds your keys and is gitignored. Never commit it, and do not paste
+  it into issues or chats.
+- Restart the server after editing `.env`; it is read only at start-up.
+
+### Step 1: your e-mail (required)
+
+```bash
+CONTACT_EMAIL=you@university.fi
+```
+
+Unpaywall, one of the main sources of free PDFs, refuses requests without an
+address. OpenAlex, CrossRef and PubMed put requests with an address in a
+faster queue. The address is sent only to these services.
+
+### Step 2: Claude (choose one)
+
+**A. Claude subscription (Pro or Max), no API key.** Install the Claude Code
+CLI and log in once:
+
+```bash
+claude /login
+```
+
+Leave `ANTHROPIC_API_KEY` empty and `AI_BACKEND=auto`. The app finds the
+`claude` binary on your `PATH` and uses your plan. Set
+`CLAUDE_CLI=/full/path/to/claude` if it is not on your `PATH`.
+
+**B. Anthropic API key (pay per use).** Create a key in the
+[Claude Console](https://platform.claude.com/docs/en/get-api-key) under
+*Settings → API keys* (it is shown only once, so copy it right away) and set:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+With both available, `AI_BACKEND=auto` prefers the API key. Set
+`AI_BACKEND=claude-cli` to force the subscription, or `AI_BACKEND=api` to force
+the key.
+
+### Step 3: database keys (free, recommended)
+
+Searching works without keys, but the anonymous limits are low and a review
+easily runs into them. All three keys are free:
+
+| Setting | Where to get it | Why |
+|---------|-----------------|-----|
+| `S2_API_KEY` | request one on the [Semantic Scholar API page](https://www.semanticscholar.org/product/api) (arrives by e-mail) | the shared anonymous pool often answers "429 Too Many Requests" |
+| `OPENALEX_API_KEY` | create a free account at [openalex.org](https://openalex.org) and copy the key from *Settings → API key* ([docs](https://developers.openalex.org/guides/authentication)) | without a key OpenAlex allows only a small daily budget; searches, snowballing, keyword fetches and venue ratings all use it |
+| `CORE_API_KEY` | register at [core.ac.uk/services/api](https://core.ac.uk/services/api) | the CORE database is offered only when this is set |
+
+CrossRef and PubMed need no key.
+
+### Step 4: models per step (optional)
+
+By default every step uses the base model: Sonnet (`CLAUDE_CLI_MODEL` or
+`ANTHROPIC_MODEL`). To save cost on the many screening calls and get a
+stronger background section:
+
+```bash
+MODEL_SCREENING=haiku       # always the newest Haiku
+MODEL_SYNTHESIS=opus        # always the newest Opus
+```
+
+`haiku`, `sonnet`, `opus` and `fable` always mean the newest model of that
+family, so they move to new Claude releases without any change. An exact id
+such as `claude-opus-5-5` stays on that version.
+
+The other steps are `MODEL_QUERIES`, `MODEL_ADJUDICATION`, `MODEL_EXTRACTION`
+and `MODEL_CONCEPTS`. Each project can still override these in the app. See
+[Choose a model per step](#choose-a-model-per-step).
+
+### Step 5: second screener (optional)
+
+For an independent second opinion on every paper, get a key from the
+[TypeSafe console](https://console.typesafe.ai/settings/keys):
+
+```bash
+JEV_API_KEY=apikey_...
+```
+
+Screening then runs both Claude and Jev (`SCREENER=both`). See
+[Use two screeners](#use-two-screeners).
+
+### Step 6: university library (optional, usually not in .env)
+
+Leave `PROXY_PREFIX` and `PROXY_COOKIE` empty and use **Library access** in
+the app instead: it logs in through a browser window and keeps the session
+up to date (see [Use your university library](#use-your-university-library)).
+The `.env` values are only a fallback for machines without a browser.
+
+### Check that it worked
+
+Start the app and read the first log lines:
+
+```
+loaded 24 variable(s) from .env
+AI backend: claude CLI in headless mode (/usr/bin/claude, model: sonnet)
+AI model for Screening: claude-haiku-5-5
+litreview listening on http://localhost:8080 (data: data)
+```
+
+- `loaded N variable(s)` counts the lines read from `.env` (empty ones
+  included) that your shell had not already set. No such line means `.env`
+  was not found: start the app from the folder that contains it.
+- A `WARNING: CONTACT_EMAIL is not set` line means step 1 is missing.
+- `WARNING: no AI backend` means neither a key nor a logged-in CLI was found.
+- The server refuses to start on a misspelt `MODEL_*` name and lists the
+  valid ones.
+- The page header shows the active backend and model.
 
 ## Doing a review, step by step
 
@@ -116,11 +242,13 @@ Fill in the form on the start page:
 Press **Create & start AI search** to go straight to searching, or **Create
 only** to adjust things first.
 
-**Language models.** Below the form, *Language models* lets you choose a model
-for each step: query design, screening, adjudication, table extraction,
-concept matrix and synthesis. Screening makes most of the calls, so a cheap
-model there (Haiku or Sonnet) saves the most. Opus suits the background
-section. See [Choose a model per step](#choose-a-model-per-step).
+**Language models.** Open *Language models* at the bottom of the form to
+choose a model for each step: query design, screening, adjudication, table
+extraction, concept matrix and synthesis. Leave a step on *Default* to use the
+server setting. Screening makes most of the calls, so *Latest Haiku* or
+*Latest Sonnet* there saves the most; *Latest Opus* suits the background
+section. You can change these later under *Setup → Language models*. See
+[Choose a model per step](#choose-a-model-per-step).
 
 ### 2 · Search strategy
 
@@ -270,9 +398,10 @@ Each step that calls Claude can run on its own model:
 
 The app chooses the model for a step in this order:
 
-1. the project's choice under *Setup → Language models* (Haiku 5.5, Sonnet
-   5.5, Opus 5.5 or Fable 5.2; saved per project and undoable);
-2. the server default `MODEL_<STEP>`, which accepts any model id or CLI alias;
+1. the project's choice, made on the new-review form or under *Setup →
+   Language models* (saved per project and undoable);
+2. the server default `MODEL_<STEP>`, which accepts any model id or a family
+   name (`haiku`, `sonnet`, `opus`, `fable`);
 3. for adjudication and the concept matrix, `MODEL_SYNTHESIS` (`SYNTHESIS_MODEL`
    still works as an alias);
 4. the backend model (`ANTHROPIC_MODEL` or `CLAUDE_CLI_MODEL`, default Sonnet).
@@ -282,12 +411,27 @@ or the concept matrix, so trying Fable on a draft never moves a bulk step onto
 Fable. A misspelt `MODEL_*` variable stops the server at start-up and lists
 the valid names. The job log names the model each step used.
 
-Example `.env` for a subscription user who wants cheap screening and a strong
-draft:
+**Which models are offered, and how the list stays current:**
+
+- **Latest Haiku / Sonnet / Opus / Fable** always use the newest model in that
+  family. When Anthropic releases a new Opus, every step set to *Latest Opus*
+  moves to it with no change on your side. This is the recommended choice.
+- **Pinned models** (API key only) stay on one exact version, for example to
+  keep a review reproducible. With an API key, the app reads the models your
+  account can use from Anthropic's Models API (`GET /v1/models`) and refreshes
+  the list every six hours, so new releases appear in the selectors by
+  themselves. Without network access it falls back to a built-in list.
+- **With the Claude CLI** (subscription), only the *Latest* choices are shown:
+  the CLI resolves `haiku`, `sonnet`, `opus` and `fable` to its newest model
+  itself, and it has no way to list exact versions. A pinned id you set
+  earlier, or through `MODEL_<STEP>`, still works and stays selected.
+
+Example `.env` for cheap screening and a strong draft, both following new
+releases:
 
 ```bash
-MODEL_SCREENING=claude-haiku-5-5
-MODEL_SYNTHESIS=claude-opus-5-5
+MODEL_SCREENING=haiku
+MODEL_SYNTHESIS=opus
 ```
 
 ### Use your university library
@@ -438,8 +582,8 @@ disabled while a job runs.
 
 ### Configuration
 
-Set these in `.env` or in the shell; the shell wins. Copy `.env.example` as a
-starting point.
+Set these in `.env` or in the shell; the shell wins. Copy `.example.env` as a
+starting point and see [Setting up .env](#setting-up-env).
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
@@ -455,7 +599,7 @@ starting point.
 | `JEV_MODEL` | `jev-latest` | Jev model id |
 | `SCREENER` | `both` with a Jev key, else `claude` | `both`, `claude`, or `jev` |
 | `S2_API_KEY` | – | Semantic Scholar key (free, strongly recommended) |
-| `OPENALEX_API_KEY` | – | OpenAlex key; the free tier allows 1,000 credits a day at 10 per search |
+| `OPENALEX_API_KEY` | – | OpenAlex key; raises the small keyless daily budget (free account) |
 | `CORE_API_KEY` | – | enables the CORE database |
 | `PROXY_PREFIX`, `PROXY_COOKIE` | – | EZproxy access; the Library access page overrides these |
 | `BROWSER_BIN` | first of chromium, google-chrome, brave | browser for library login and headless downloads |

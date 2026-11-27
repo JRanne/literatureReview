@@ -21,6 +21,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		"Sources":  s.sourceViews(nil),
 		"YearTo":   time.Now().Year(),
 		"YearFrom": time.Now().Year() - 10,
+		// A blank project shows each step's configured default.
+		"StepModels":   s.stepModelViews(&model.Project{}),
+		"ModelChoices": s.ai.Catalog().Options(),
 	})
 }
 
@@ -64,6 +67,11 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "select at least one database", 400)
 		return
 	}
+	picks, err := s.parseModelForm(r, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	now := time.Now()
 	p := &model.Project{
 		ID:               store.NewID(),
@@ -83,6 +91,9 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Papers:           []*model.Paper{},
 		CreatedAt:        now,
 		UpdatedAt:        now,
+	}
+	for st, v := range picks {
+		p.SetStepModel(string(st), v)
 	}
 	if err := s.store.Put(p); err != nil {
 		http.Error(w, err.Error(), 500)
@@ -131,28 +142,30 @@ type projectData struct {
 	NeedsLogin      int    // kept papers skipped only because the proxy session expired
 	SynthesisNext   string // model the next background-section call will use
 	SynthesisChoice string // the user's saved choice (may be empty)
-	ModelChoices    []ai.ModelOption
-	StepModels      []stepModelView
-	SessionExpired  bool
-	SessionMsg      string
-	LoginRunning    bool
-	LoginDone       bool
-	LoginOK         bool
-	LoginMessage    string
-	QueryText       map[string]string
-	Extracted       int
-	ProxyMissing    bool
-	Conflicts       int
-	FullTextCount   int
-	Preprints       int
-	NonEnglish      int
-	UndoLabel       string
-	RedoLabel       string
-	FailedSources   []string // one line per database whose queries all failed in the last round
-	Rated           int      // papers with a venue rating
-	Jufo0           int      // tier "below" and not dropped
-	UnknownVenue    int      // tier "unknown" and not dropped
-	Unrated         int      // kept papers without a rating
+	// SynthesisUnlisted: the saved choice is not in the current model list.
+	SynthesisUnlisted bool
+	ModelChoices      []ai.ModelOption
+	StepModels        []stepModelView
+	SessionExpired    bool
+	SessionMsg        string
+	LoginRunning      bool
+	LoginDone         bool
+	LoginOK           bool
+	LoginMessage      string
+	QueryText         map[string]string
+	Extracted         int
+	ProxyMissing      bool
+	Conflicts         int
+	FullTextCount     int
+	Preprints         int
+	NonEnglish        int
+	UndoLabel         string
+	RedoLabel         string
+	FailedSources     []string // one line per database whose queries all failed in the last round
+	Rated             int      // papers with a venue rating
+	Jufo0             int      // tier "below" and not dropped
+	UnknownVenue      int      // tier "unknown" and not dropped
+	Unrated           int      // kept papers without a rating
 }
 
 func (s *Server) projectData(p *model.Project, filter string) projectData {
@@ -222,7 +235,8 @@ func (s *Server) projectData(p *model.Project, filter string) projectData {
 	}
 	d.SynthesisNext = s.ai.ForStep(ai.StepSynthesis, nil, s.cfg.StepModels).ModelLabel()
 	d.SynthesisChoice = p.StepModel(string(ai.StepSynthesis))
-	d.ModelChoices = ai.ModelChoices
+	d.SynthesisUnlisted = !s.ai.Catalog().Known(d.SynthesisChoice)
+	d.ModelChoices = s.ai.Catalog().Options()
 	d.StepModels = s.stepModelViews(p)
 	d.SessionExpired, d.SessionMsg, _ = s.chain.Session.Status()
 	d.LoginRunning, d.LoginDone, d.LoginOK, d.LoginMessage, _, _ = s.login.snapshot()

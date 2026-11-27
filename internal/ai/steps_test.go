@@ -102,13 +102,14 @@ func TestParseStep(t *testing.T) {
 }
 
 func TestKnownModel(t *testing.T) {
-	if !KnownModel("") {
+	var offline *Catalog // a disabled backend offers the built-in list
+	if !offline.Known("") {
 		t.Error("empty (inherit) must be accepted")
 	}
-	if !KnownModel("claude-opus-5-5") {
+	if !offline.Known("claude-opus-5-5") {
 		t.Error("listed model rejected")
 	}
-	if KnownModel("gpt-4") {
+	if offline.Known("gpt-4") {
 		t.Error("unlisted model accepted")
 	}
 }

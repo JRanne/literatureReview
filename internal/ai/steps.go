@@ -74,28 +74,7 @@ func (c *Client) ForStep(step Step, project, defaults Models) *Client {
 	return c.WithModel(ResolveModel(step, project, defaults))
 }
 
-// ModelOption is one model offered in the per-step selectors.
+// ModelOption is one entry of the per-step model selectors.
 type ModelOption struct {
 	ID, Label, Note string
-}
-
-// ModelChoices lists the models offered in the UI. Full ids work on both
-// backends (the CLI accepts them as well as its aliases). Any id can still be
-// configured through the MODEL_<STEP> environment variables.
-var ModelChoices = []ModelOption{
-	{ID: "", Label: "Default", Note: "the configured default for this step"},
-	{ID: "claude-haiku-5-5", Label: "Haiku 5.5", Note: "cheapest; adequate for bulk screening"},
-	{ID: "claude-sonnet-5-5", Label: "Sonnet 5.5", Note: "fast and economical"},
-	{ID: "claude-opus-5-5", Label: "Opus 5.5", Note: "recommended for the argument-driven background section"},
-	{ID: "claude-fable-5-2", Label: "Fable 5.2", Note: "strongest and most expensive"},
-}
-
-// KnownModel reports whether id is one of ModelChoices ("" included).
-func KnownModel(id string) bool {
-	for _, m := range ModelChoices {
-		if m.ID == id {
-			return true
-		}
-	}
-	return false
 }
