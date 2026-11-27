@@ -556,3 +556,8 @@ internal/prisma/          PRISMA 2020 counts, SVG and methods paragraph
 internal/zotero/          Zotero desktop and Web API clients
 internal/server/          HTTP handlers (one file per step), background jobs, templates
 ```
+
+## License
+
+[MIT](LICENSE). Retrieved papers remain subject to their publishers' terms;
+the app only uses open licences and your own institution's subscriptions.
