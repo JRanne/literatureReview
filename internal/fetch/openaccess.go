@@ -108,6 +108,18 @@ func (f *Unpaywall) Fetch(ctx context.Context, p *model.Paper) (*Result, error) 
 	for i := range body.OALocations {
 		add(&body.OALocations[i])
 	}
+	// Remember the OA locations on the paper so later stages (the headless
+	// browser in particular) can try them when a plain HTTP client is turned
+	// away by a bot check or an interstitial page.
+	known := map[string]bool{}
+	for _, u := range p.PDFURLs {
+		known[u] = true
+	}
+	for _, u := range cands {
+		if !known[u] {
+			p.PDFURLs = append(p.PDFURLs, u)
+		}
+	}
 	var errs []string
 	for i, u := range cands {
 		if i >= 4 {

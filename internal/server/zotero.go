@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"literaturereview/internal/model"
+	"literaturereview/internal/sources"
 	"literaturereview/internal/zotero"
 )
 
@@ -428,4 +429,117 @@ func (s *Server) zoteroLocalExport(ctx context.Context, id, title, name string, 
 	}
 	lg.log("Done: collection %q holds %d items (%d new, %d reused); %d PDFs stored in Zotero this run%s.", name, created+reused, created, reused, up, extra)
 	return nil
+}
+
+// --- individual references ---------------------------------------------------
+
+// AddReferences looks up each reference (DOI, OpenAlex id or title) in
+// OpenAlex, downloads its PDF through the access chain into pdfDir and files
+// the papers in the named Zotero desktop collection. It is used by the
+// Zotero page and by the addref command.
+func (s *Server) AddReferences(ctx context.Context, projectTitle, pdfDir string, refs []string, collection string, lg jobLogger) error {
+	src, ok := s.reg.Get("openalex")
+	if !ok {
+		return errors.New("OpenAlex source is not available")
+	}
+	oa, ok := src.(*sources.OpenAlex)
+	if !ok {
+		return errors.New("OpenAlex source has an unexpected type")
+	}
+	lg.phase(1, 3, "Looking up references", len(refs))
+	var papers []*model.Paper
+	for i, ref := range refs {
+		lg.progress(i+1, len(refs))
+		pp, err := oa.Lookup(ctx, ref)
+		if err != nil {
+			lg.log("✗ %s — %v", shortTitle(ref), err)
+			continue
+		}
+		pp.Decision, pp.DecisionBy = model.DecisionKeep, "user"
+		lg.log("Found: %s (%d, %s)%s", shortTitle(pp.Title), pp.Year, pp.Venue, func() string {
+			if pp.DOI != "" {
+				return " doi:" + pp.DOI
+			}
+			return ""
+		}())
+		papers = append(papers, pp)
+	}
+	if len(papers) == 0 {
+		return errors.New("none of the references could be resolved")
+	}
+	tmp := &model.Project{Title: projectTitle}
+	for _, pp := range papers {
+		tmp.Papers = append(tmp.Papers, pp)
+	}
+	tmp.EnsureBibKeys()
+	lg.phase(2, 3, "Downloading PDFs", len(papers))
+	s.ensureSession(ctx, lg)
+	got := 0
+	for i, pp := range papers {
+		lg.progress(i+1, len(papers))
+		pp.Download = s.chain.Run(ctx, pp, pdfDir)
+		if pp.Download.Status == model.DownloadOK {
+			got++
+			lg.log("✓ %s — via %s", shortTitle(pp.Title), pp.Download.Method)
+		} else {
+			lg.log("✗ %s — no PDF (%s)", shortTitle(pp.Title), lastAttemptMessage(pp.Download))
+		}
+	}
+	lg.log("PDFs obtained for %d of %d references.", got, len(papers))
+	return s.zoteroLocalExport(ctx, "", projectTitle, collection, papers, lg)
+}
+
+// lastAttemptMessage summarises why the chain failed for a paper.
+func lastAttemptMessage(d model.DownloadResult) string {
+	for i := len(d.Attempts) - 1; i >= 0; i-- {
+		if m := d.Attempts[i].Message; m != "" && !strings.HasPrefix(m, "skipped") {
+			return shortTitle(m)
+		}
+	}
+	return "no attempts"
+}
+
+// AddReferencesStandalone runs AddReferences outside the web server (the
+// addref command): progress goes to the log instead of a project job.
+func (s *Server) AddReferencesStandalone(ctx context.Context, projectTitle, pdfDir string, refs []string, collection string) error {
+	return s.AddReferences(ctx, projectTitle, pdfDir, refs, collection, jobLogger{s: s, id: ""})
+}
+
+// handleZoteroAdd files individual references (one DOI or title per line)
+// in a Zotero desktop collection, with PDFs where obtainable.
+func (s *Server) handleZoteroAdd(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	name := strings.TrimSpace(r.FormValue("collection"))
+	var refs []string
+	for _, l := range strings.Split(r.FormValue("refs"), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			refs = append(refs, l)
+		}
+	}
+	if name == "" || len(refs) == 0 {
+		http.Redirect(w, r, "/projects/"+id+"/zotero?error="+urlEsc("give a collection name and at least one DOI or title"), http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	running := zotero.NewLocal(s.cfg.ZoteroLocal).Ping(ctx)
+	cancel()
+	if !running {
+		http.Redirect(w, r, "/projects/"+id+"/zotero?error="+urlEsc("Zotero desktop is not running (or port 23119 is not reachable)"), http.StatusSeeOther)
+		return
+	}
+	var title string
+	_ = s.store.View(id, func(p *model.Project) { title = p.Title })
+	dir, err := s.store.ProjectDir(id)
+	if err != nil {
+		http.Redirect(w, r, "/projects/"+id+"/zotero?error="+urlEsc(err.Error()), http.StatusSeeOther)
+		return
+	}
+	pdfDir := filepath.Join(dir, "pdfs")
+	if err := s.runJob(id, "zotero", func(ctx context.Context, lg jobLogger) error {
+		return s.AddReferences(ctx, title, pdfDir, refs, name, lg)
+	}); err != nil {
+		http.Redirect(w, r, "/projects/"+id+"/zotero?error="+urlEsc(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/projects/"+id+"/zotero?collection="+urlEsc(name), http.StatusSeeOther)
 }

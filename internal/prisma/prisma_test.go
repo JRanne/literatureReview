@@ -19,14 +19,15 @@ func TestComputeAndRender(t *testing.T) {
 			{Decision: model.DecisionDrop, Preprint: true},
 			{Decision: model.DecisionDrop, NonEnglish: true},
 			{Decision: model.DecisionDrop, DecisionBy: "user"},
+			{Decision: model.DecisionDrop, DecisionBy: "user", NotRetrieved: true},
 			{Decision: model.DecisionUndecided},
 		},
 	}
 	c := Compute(p)
-	if c.Databases != 80 || c.Citation != 20 || c.Automation != 5 || c.Screened != 7 || c.Duplicates != 100-7-5 {
+	if c.Databases != 80 || c.Citation != 20 || c.Automation != 5 || c.Screened != 8 || c.Duplicates != 100-8-5 {
 		t.Fatalf("identification: %+v", c)
 	}
-	if c.Excluded != 4 || c.Undecided != 1 || c.Sought != 2 || c.NotRetrieved != 1 || c.Assessed != 1 || c.Included != 2 {
+	if c.Excluded != 4 || c.Undecided != 1 || c.Sought != 3 || c.NotRetrieved != 2 || c.Assessed != 1 || c.Included != 2 {
 		t.Fatalf("screening: %+v", c)
 	}
 	if c.ExcludedReason["Preprint or repository record (not peer reviewed)"] != 1 || c.ExcludedReason["Not in English"] != 1 || c.ExcludedReason["Excluded by the researcher"] != 1 {
@@ -34,7 +35,7 @@ func TestComputeAndRender(t *testing.T) {
 	}
 	label := func(s string) string { return strings.ToUpper(s) }
 	svg := SVG(c, label)
-	for _, want := range []string{"<svg", "Records identified from databases (n = 80)", "OPENALEX (n = 50)", "Duplicate records (n = 88)", "Records screened (n = 7)", "Studies included in review (n = 2)", "Citation searching (n = 20)"} {
+	for _, want := range []string{"<svg", "Records identified from databases (n = 80)", "OPENALEX (n = 50)", "Duplicate records (n = 87)", "Records screened (n = 8)", "Studies included in review (n = 2)", "Citation searching (n = 20)"} {
 		if !strings.Contains(svg, want) {
 			t.Errorf("svg missing %q", want)
 		}

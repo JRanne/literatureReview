@@ -4,7 +4,10 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
+
+	"literaturereview/internal/ai"
 )
 
 // Config holds every tunable the application needs.
@@ -19,10 +22,13 @@ type Config struct {
 	AnthropicModel  string
 	// ClaudeCLIPath is the claude binary used by the claude-cli backend.
 	ClaudeCLIPath string
-	// SynthesisModel overrides the model for the single synthesis call
-	// (e.g. "opus" with the CLI backend, or a full id with the API). Empty
-	// uses the backend's default model.
-	SynthesisModel string
+	// StepModels is the default model per review step, from MODEL_<STEP>
+	// (e.g. MODEL_SCREENING=claude-haiku-5-5). SYNTHESIS_MODEL is still read
+	// as an alias for MODEL_SYNTHESIS. Steps left out use the backend model.
+	StepModels ai.Models
+	// unknownModelVars lists MODEL_* variables that name no step, so a typo
+	// fails Validate instead of being ignored.
+	unknownModelVars []string
 	// ClaudeCLIModel is passed as --model to the CLI. Defaults to "sonnet"
 	// so the account's default (often the most expensive model) is never
 	// used implicitly.
@@ -79,7 +85,6 @@ func FromEnv() Config {
 		AIBackend:             strings.ToLower(envOr("AI_BACKEND", "auto")),
 		AnthropicAPIKey:       os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:        envOr("ANTHROPIC_MODEL", "claude-sonnet-5-5"),
-		SynthesisModel:        os.Getenv("SYNTHESIS_MODEL"),
 		ClaudeCLIPath:         envOr("CLAUDE_CLI", "claude"),
 		ClaudeCLIModel:        envOr("CLAUDE_CLI_MODEL", "sonnet"),
 		JevAPIKey:             firstEnv("JEV_API_KEY", "TYPESAFE_API_KEY"),
@@ -96,6 +101,7 @@ func FromEnv() Config {
 		ZoteroLocal:           envOr("ZOTERO_LOCAL", "http://127.0.0.1:23119"),
 		BrowserFetch:          strings.ToLower(envOr("BROWSER_FETCH", "auto")),
 	}
+	c.StepModels, c.unknownModelVars = stepModelsFromEnv(os.Environ())
 	if c.Screener == "" {
 		if c.JevAPIKey != "" {
 			c.Screener = "both"
@@ -118,6 +124,9 @@ func (c Config) Validate() error {
 	case "auto", "api", "claude-cli":
 	default:
 		problems = append(problems, fmt.Sprintf("AI_BACKEND=%q is not one of auto, api, claude-cli", c.AIBackend))
+	}
+	for _, v := range c.unknownModelVars {
+		problems = append(problems, fmt.Sprintf("%s names no review step (known: %s)", v, stepVarList()))
 	}
 	switch c.Screener {
 	case "both", "claude", "jev":
@@ -158,4 +167,37 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+const modelVarPrefix = "MODEL_"
+
+// stepModelsFromEnv reads MODEL_<STEP> from environ ("KEY=value" pairs).
+func stepModelsFromEnv(environ []string) (ai.Models, []string) {
+	m := ai.Models{}
+	if v := os.Getenv("SYNTHESIS_MODEL"); v != "" {
+		m[ai.StepSynthesis] = v
+	}
+	var unknown []string
+	for _, kv := range environ {
+		k, v, _ := strings.Cut(kv, "=")
+		if !strings.HasPrefix(k, modelVarPrefix) || v == "" {
+			continue
+		}
+		step, ok := ai.ParseStep(strings.ToLower(strings.TrimPrefix(k, modelVarPrefix)))
+		if !ok {
+			unknown = append(unknown, k)
+			continue
+		}
+		m[step] = v
+	}
+	sort.Strings(unknown)
+	return m, unknown
+}
+
+func stepVarList() string {
+	var names []string
+	for _, s := range ai.AllSteps {
+		names = append(names, modelVarPrefix+strings.ToUpper(string(s.Step)))
+	}
+	return strings.Join(names, ", ")
 }

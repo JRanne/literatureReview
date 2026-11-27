@@ -1,4 +1,5 @@
 data/
-litreview
+/litreview
+/addref
 *.pdf
 .env

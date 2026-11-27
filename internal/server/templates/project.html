@@ -50,6 +50,19 @@
     </div>
   </form>
 </div>
+<div class="card">
+  <h3>Language models</h3>
+  <p class="muted small">Each step can run on its own model. <i>Default</i> uses the server setting for that step (<code>MODEL_&lt;STEP&gt;</code>, e.g. <code>MODEL_SCREENING</code>), otherwise the backend model. Screening makes most of the calls, so a cheaper model there saves the most.</p>
+  <form method="post" action="/projects/{{.P.ID}}/models">
+    <table class="models">
+      {{range .StepModels}}{{$row := .}}<tr>
+        <td><label for="model_{{.Step}}">{{.Label}}</label><div class="muted small">{{.Help}}</div></td>
+        <td><select id="model_{{.Step}}" name="model_{{.Step}}">{{range $.ModelChoices}}<option value="{{.ID}}" {{if eq .ID $row.Choice}}selected{{end}} title="{{.Note}}">{{.Label}}{{if and (not .ID) $row.Default}} ({{$row.Default}}){{end}}</option>{{end}}</select></td>
+      </tr>{{end}}
+    </table>
+    <div class="row" style="margin-top:12px"><button {{if .JobRunning}}disabled{{end}}>Save models</button></div>
+  </form>
+</div>
 
 {{/* ================= 2 · SEARCH STRATEGY ================= */}}
 {{else if eq .View "search"}}
@@ -202,21 +215,24 @@
 
   <h3>Background section</h3>
   <div class="card">
-    <p class="muted small">An academic background / related-work section synthesised from the {{.Keep}} included papers ({{.FullTextCount}} read from full text, the rest from abstracts and the extracted aspects). Citations use the same keys as the exported bibliography, in pandoc form <code>[@key]</code>; the LaTeX export converts them to <code>\citep{}</code>. Model: {{if .P.SynthesisModel}}{{.P.SynthesisModel}}{{else}}{{.Base.Model}}{{end}}{{if .Base.SynthesisModel}} (SYNTHESIS_MODEL){{end}}.</p>
+    <p class="muted small">An academic background / related-work section synthesised from the {{.Keep}} included papers ({{.FullTextCount}} read from full text, the rest from abstracts and the extracted aspects). Citations use the same keys as the exported bibliography, in pandoc form <code>[@key]</code>; the LaTeX export converts them to <code>\citep{}</code>. {{if .P.SynthesisModel}}Current draft written by <b>{{.P.SynthesisModel}}</b>{{if .P.SynthesisAt}} ({{fmtTime .P.SynthesisAt}}){{end}}.{{end}}</p>
+    
     {{if and .P.Job .P.Job.Error (eq .P.Job.Name "synthesis")}}<p class="err">{{.P.Job.Error}}</p>{{end}}
     {{if .P.Synthesis}}
       <div class="row" style="margin-bottom:10px">
         <a class="btn" href="/projects/{{.P.ID}}/synthesis.md">Download Markdown</a>
         <a class="btn" href="/projects/{{.P.ID}}/synthesis.tex">Download LaTeX</a>
         <a class="btn" href="/projects/{{.P.ID}}/export.bib">bibliography.bib</a>
-        <form method="post" action="/projects/{{.P.ID}}/synthesize" onsubmit="return confirm('Regenerate the section from the currently included papers? The current draft is replaced.')"><button {{if .JobRunning}}disabled{{end}}>Regenerate</button></form>
+        <form method="post" action="/projects/{{.P.ID}}/synthesize" class="row" style="gap:6px" onsubmit="return confirm('Regenerate the section from the currently included papers with the selected model? The current draft is replaced (Undo restores it).')">{{template "synth_model_select" .}}<button {{if .JobRunning}}disabled{{end}}>Regenerate</button></form>
         <span class="muted small">drafted {{fmtTime .P.SynthesisAt}}</span>
       </div>
       <div class="synth-html">{{markdown .P.Synthesis}}</div>
     {{else}}
-      <form method="post" action="/projects/{{.P.ID}}/synthesize"><button class="btn-primary" {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}}>Draft background section</button></form>
+      <form method="post" action="/projects/{{.P.ID}}/synthesize" class="row" style="gap:6px">{{template "synth_model_select" .}}<button class="btn-primary" {{if or .JobRunning (not .Base.AIEnabled)}}disabled{{end}}>Draft background section</button></form>
       <p class="muted small" style="margin-top:8px">Tip: run <i>Extract key aspects</i> on the master table first; the draft uses those fields as structured evidence.</p>
     {{end}}
   </div>
 {{end}}
 {{template "bottom" .}}{{end}}
+
+{{define "synth_model_select"}}<label class="small" style="display:inline-flex;align-items:center;gap:6px">Model <select name="model" title="Model for the next draft; the other steps keep their own models (Setup → Language models)">{{range .ModelChoices}}<option value="{{.ID}}" {{if eq .ID $.SynthesisChoice}}selected{{end}} title="{{.Note}}">{{.Label}}{{if not .ID}} ({{$.SynthesisNext}}){{end}}</option>{{end}}</select></label>{{end}}

@@ -81,6 +81,9 @@ type DownloadResult struct {
 	Path     string         `json:"path,omitempty"`
 	Bytes    int64          `json:"bytes,omitempty"`
 	Attempts []Attempt      `json:"attempts,omitempty"`
+	// NeedsLogin is set when the paper was not obtained only because the
+	// university proxy session had expired; it is retried after a login.
+	NeedsLogin bool `json:"needs_login,omitempty"`
 }
 
 // Extraction holds the AI-extracted key aspects of a paper, the content of a
@@ -224,6 +227,11 @@ type Paper struct {
 	TextPath  string `json:"text_path,omitempty"`
 	TextChars int    `json:"text_chars,omitempty"`
 
+	// NotRetrieved marks a paper that passed screening but was removed from
+	// the analysis because no full text could be obtained. PRISMA counts it
+	// as "report not retrieved", not as a screening exclusion.
+	NotRetrieved bool `json:"not_retrieved,omitempty"`
+
 	Decision Decision `json:"decision"`
 	// DecisionBy is "user" when a human set the decision, "ai" when it was
 	// pre-filled from the AI verdict. User decisions survive re-screening.
@@ -287,9 +295,42 @@ type Project struct {
 	// SynthesisModel records which model wrote the current draft.
 	SynthesisModel string    `json:"synthesis_model,omitempty"`
 	SynthesisAt    time.Time `json:"synthesis_at,omitempty"`
+	// SynthesisChoice is the legacy per-project synthesis model, read only
+	// for projects saved before StepModels existed.
+	SynthesisChoice string `json:"synthesis_choice,omitempty"`
+	// StepModels is the model the user picked per review step (keyed by the
+	// step name, e.g. "screening"); missing steps use the configured default.
+	StepModels map[string]string `json:"step_models,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// StepModel returns the user's model for a step, or "" for the default.
+func (p *Project) StepModel(step string) string {
+	if m := p.StepModels[step]; m != "" {
+		return m
+	}
+	if step == "synthesis" {
+		return p.SynthesisChoice
+	}
+	return ""
+}
+
+// SetStepModel records the user's model for a step ("" restores the default)
+// and retires the legacy synthesis field so it cannot shadow the new choice.
+func (p *Project) SetStepModel(step, id string) {
+	if step == "synthesis" {
+		p.SynthesisChoice = ""
+	}
+	if id == "" {
+		delete(p.StepModels, step)
+		return
+	}
+	if p.StepModels == nil {
+		p.StepModels = map[string]string{}
+	}
+	p.StepModels[step] = id
 }
 
 // HasJev reports whether a usable Jev assessment exists.

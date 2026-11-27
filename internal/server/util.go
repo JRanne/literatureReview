@@ -5,8 +5,10 @@ import (
 	"html"
 	"html/template"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
+	"time"
 )
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -110,3 +112,16 @@ func renderMarkdown(src string) template.HTML {
 	closeLists()
 	return template.HTML(sb.String())
 }
+
+func urlEsc(s string) string {
+	return url.QueryEscape(s)
+}
+
+func shortTitle(t string) string {
+	if len(t) > 70 {
+		return t[:70] + "…"
+	}
+	return t
+}
+
+var nowFn = time.Now

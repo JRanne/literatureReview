@@ -64,13 +64,14 @@ func (c *Client) ExtractPapers(ctx context.Context, p *model.Project, papers []*
 				cancel()
 				return
 			}
+			// Report under the lock: callers write progress to the store and
+			// must see calls one at a time, in increasing order.
 			mu.Lock()
 			done += len(batch)
-			d := done
-			mu.Unlock()
 			if progress != nil {
-				progress(d, total)
+				progress(done, total)
 			}
+			mu.Unlock()
 		}()
 	}
 	wg.Wait()

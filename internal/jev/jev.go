@@ -240,12 +240,14 @@ func (c *Client) AssessAll(ctx context.Context, p *model.Project, papers []*mode
 			defer wg.Done()
 			defer func() { <-sem }()
 			pp.Jev = c.Assess(ctx, p, pp)
+			// progress runs under the lock so callers see calls one at a
+			// time and in increasing order; outside it a slower goroutine
+			// could report 2 after another had already reported 3.
 			mu.Lock()
+			defer mu.Unlock()
 			done++
-			d := done
-			mu.Unlock()
 			if progress != nil {
-				progress(d, len(papers))
+				progress(done, len(papers))
 			}
 		}()
 	}

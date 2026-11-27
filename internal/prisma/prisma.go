@@ -59,9 +59,11 @@ func Compute(p *model.Project) Counts {
 	} else if identified > c.Screened+c.Automation {
 		c.Duplicates = identified - c.Screened - c.Automation
 	}
+	kept := 0
 	for _, pp := range p.Papers {
 		switch pp.Decision {
 		case model.DecisionKeep:
+			kept++
 			c.Sought++
 			if pp.Download.Status == model.DownloadOK {
 				c.Assessed++
@@ -69,6 +71,13 @@ func Compute(p *model.Project) Counts {
 				c.NotRetrieved++
 			}
 		case model.DecisionDrop:
+			if pp.NotRetrieved {
+				// Passed screening; removed only because the full text could
+				// not be obtained. PRISMA: sought, not retrieved, not included.
+				c.Sought++
+				c.NotRetrieved++
+				continue
+			}
 			c.Excluded++
 			switch {
 			case pp.Preprint || sources.IsPreprint(pp):
@@ -84,7 +93,7 @@ func Compute(p *model.Project) Counts {
 			c.Undecided++
 		}
 	}
-	c.Included = c.Sought
+	c.Included = kept
 	return c
 }
 

@@ -21,9 +21,10 @@ type PDFBrowser interface {
 // publisher pattern URLs and the landing page, through the proxy when one is
 // configured and directly otherwise.
 type Browser struct {
-	B      PDFBrowser
-	Prefix func() string // current proxy prefix ("" when none)
-	ua     string
+	B       PDFBrowser
+	Prefix  func() string // current proxy prefix ("" when none)
+	Session *SessionState // shared proxy-session state (may be nil)
+	ua      string
 }
 
 func (f *Browser) Name() string { return "headless browser" }
@@ -44,21 +45,43 @@ func (f *Browser) Fetch(ctx context.Context, p *model.Paper) (*Result, error) {
 	if f.Prefix != nil {
 		prefix = f.Prefix()
 	}
-	// One attempt per paper keeps a large retry bounded (~40 s each): the
-	// best publisher pattern URL through the proxy when the host is a
-	// subscription publisher, otherwise the landing page directly
-	// (JavaScript download links, bot checks, open content on unknown hosts).
-	pats := PatternURLs(ctx, newClient(nil), p, browserHeaders().Get("User-Agent"))
+	// Few attempts per paper keep a large retry bounded (~40 s each).
+	// 1. Open-access copies the earlier stages found but could not download
+	//    (bot checks, interstitial pages): a real browser usually gets them,
+	//    and no proxy session is needed.
+	// 2. The best publisher pattern URL through the proxy when the host is a
+	//    subscription publisher, otherwise the landing page directly
+	//    (JavaScript download links, open content on unknown hosts).
+	client := newClient(nil)
+	ua := browserHeaders().Get("User-Agent")
+	pats := PatternURLs(ctx, client, p, ua)
 	var attempts []string
+	for _, u := range p.PDFURLs {
+		if len(attempts) >= 2 {
+			break
+		}
+		if strings.HasPrefix(u, "http") && !strings.Contains(u, "doi.org/") {
+			attempts = append(attempts, u)
+		}
+	}
+	// Decide whether the publisher is one the proxy covers; a bare DOI link
+	// says nothing about the host, so resolve it once (subscription book
+	// platforms such as taylorfrancis.com have no pattern URL).
+	landing := target
+	if prefix != "" && len(pats) == 0 && strings.Contains(target, "doi.org/") {
+		if fin := resolveDOI(ctx, client, p.DOI, ua); fin != "" && proxiable(fin) {
+			landing = fin
+		}
+	}
 	switch {
 	case prefix != "" && len(pats) > 0 && proxiable(pats[0]):
-		attempts = []string{proxied(prefix, pats[0])}
-	case prefix != "" && len(pats) == 0 && proxiable(target):
-		attempts = []string{proxied(prefix, target)}
+		attempts = append(attempts, proxied(prefix, pats[0]))
+	case prefix != "" && len(pats) == 0 && proxiable(landing):
+		attempts = append(attempts, proxied(prefix, landing))
 	case len(pats) > 0 && !strings.Contains(pats[0], "ssrn.com"):
-		attempts = []string{pats[0]}
+		attempts = append(attempts, pats[0])
 	default:
-		attempts = []string{target}
+		attempts = append(attempts, target)
 	}
 	var errs []string
 	seen := map[string]bool{}
@@ -67,12 +90,20 @@ func (f *Browser) Fetch(ctx context.Context, p *model.Paper) (*Result, error) {
 			continue
 		}
 		seen[u] = true
+		viaProxy := prefix != "" && strings.HasPrefix(u, prefix)
+		if viaProxy && f.Session.Expired() {
+			return nil, fmt.Errorf("%w: %s", ErrSessionExpired, skipMsg)
+		}
 		data, fin, err := f.B.Fetch(ctx, u)
 		if err == nil && IsPDF(data) {
 			return &Result{URL: fin, Data: data}, nil
 		}
 		if err == nil {
 			err = fmt.Errorf("response was not a PDF")
+		}
+		if viaProxy && strings.Contains(err.Error(), "redirected to a login page") {
+			f.Session.MarkExpired(err.Error())
+			return nil, fmt.Errorf("%w: %s", ErrSessionExpired, err.Error())
 		}
 		errs = append(errs, shortURL(u)+": "+err.Error())
 	}
@@ -84,7 +115,7 @@ func (f *Browser) Fetch(ctx context.Context, p *model.Paper) (*Result, error) {
 // unknown small hosts are not proxied (EZproxy would bounce to its login).
 func proxiable(u string) bool {
 	l := strings.ToLower(u)
-	for _, h := range []string{"sciencedirect.com", "springer.com", "wiley.com", "tandfonline.com", "sagepub.com", "acm.org", "ieee.org", "emerald.com", "informs.org", "worldscientific.com", "oup.com", "jstor.org", "cambridge.org", "nature.com", "ebscohost.com", "proquest.com", "scopus.com", "webofscience.com", "misq.org", "aisnet.org", "igi-global.com", "degruyter.com", "elsevier.com", "liebertpub.com", "palgrave.com", "mitpressjournals.org", "annualreviews.org", "pubsonline"} {
+	for _, h := range []string{"sciencedirect.com", "springer.com", "wiley.com", "tandfonline.com", "taylorfrancis.com", "sagepub.com", "acm.org", "ieee.org", "emerald.com", "informs.org", "worldscientific.com", "oup.com", "jstor.org", "cambridge.org", "nature.com", "ebscohost.com", "proquest.com", "scopus.com", "webofscience.com", "misq.org", "aisnet.org", "igi-global.com", "degruyter.com", "elsevier.com", "liebertpub.com", "palgrave.com", "mitpressjournals.org", "annualreviews.org", "pubsonline"} {
 		if strings.Contains(l, h) {
 			return true
 		}
@@ -101,7 +132,7 @@ func (c *Chain) SetBrowser(b PDFBrowser, prefix func() string) {
 		}
 	}
 	if b != nil {
-		kept = append(kept, &Browser{B: b, Prefix: prefix})
+		kept = append(kept, &Browser{B: b, Prefix: prefix, Session: c.Session})
 	}
 	c.Fetchers = kept
 }

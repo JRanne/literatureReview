@@ -6,8 +6,27 @@
       <b>PDF downloads</b> · {{len .Papers}} kept papers
       <div class="muted small">Access chain: {{join .Chain " → "}} · <a href="/access">{{if not .Base.ProxySet}}set up university proxy access{{else if not .Base.ProxyCookie}}proxy prefix set, session cookie missing{{else}}library access settings{{end}}</a></div>
     </div>
-    {{if $running}}<form method="post" action="/projects/{{.P.ID}}/cancel"><button>Cancel</button></form>{{else if .PendingPDFs}}<form method="post" action="/projects/{{.P.ID}}/retry-all"><button class="btn-primary" title="Re-run the whole access chain for every kept paper without a PDF (e.g. after configuring the proxy)">Retry all {{.PendingPDFs}} missing</button></form>{{end}}
+    {{if $running}}<form method="post" action="/projects/{{.P.ID}}/cancel"><button>Cancel</button></form>{{else if .PendingPDFs}}<div class="row"><form method="post" action="/projects/{{.P.ID}}/retry-all"><button class="btn-primary" title="Re-run the whole access chain for every kept paper without a PDF (e.g. after configuring the proxy)">Retry all {{.PendingPDFs}} missing</button></form>
+    <form method="post" action="/projects/{{.P.ID}}/bulk" onsubmit="return confirm('Remove {{.PendingPDFs}} paper(s) without a PDF from the analysis? They are marked as not retrieved (PRISMA: reports not retrieved) and leave the included set. Undo is available.')"><input type="hidden" name="action" value="drop-not-retrieved"><button class="btn-danger" title="Drop every kept paper that has no PDF. PRISMA counts them as reports sought but not retrieved, not as screening exclusions. Reversible with Undo, or by setting a paper back to keep.">Remove {{.PendingPDFs}} without PDF from analysis</button></form></div>{{end}}
   </div>
+  {{if .LoginRunning}}
+    <div class="notice" style="margin-top:10px"><b>University login in progress.</b> Sign in with Haka in the browser window the app opened; the papers waiting for access are retried automatically afterwards.
+      <div id="login" hx-get="/access/status" hx-trigger="every 2s" hx-swap="outerHTML">{{template "login_status" (dict "Running" true "Done" false "OK" false "Message" .LoginMessage "Log" (list))}}</div>
+    </div>
+  {{else if and .Base.ProxySet (or .NeedsLogin .SessionExpired)}}
+    <div class="err" style="margin-top:10px">
+      <b>University access session has expired.</b>
+      {{if .NeedsLogin}}{{.NeedsLogin}} paper{{if ne .NeedsLogin 1}}s{{end}} could only be obtained through the library proxy and {{if eq .NeedsLogin 1}}is{{else}}are{{end}} waiting for a login.{{end}}
+      {{if .SessionMsg}}<span class="muted small">({{.SessionMsg}})</span>{{end}}
+      <form method="post" action="/access/browser" class="row" style="margin-top:6px">
+        <input type="hidden" name="return" value="/projects/{{.P.ID}}?view=downloads">
+        <button class="btn-primary">Log in via browser</button>
+        <span class="muted small">The app opens a browser window on the library login page, stores the new session and retries the waiting papers by itself. Or <a href="/access">paste a cookie</a>.</span>
+      </form>
+    </div>
+  {{else if and .LoginDone (not .LoginOK) .LoginMessage}}
+    <p class="err">{{.LoginMessage}}</p>
+  {{end}}
   {{if $running}}
     {{if .P.Job.Total}}<div class="progress"><span style="width:{{pct .P.Job.Progress .P.Job.Total}}%"></span></div><div class="small muted">{{.P.Job.Progress}} / {{.P.Job.Total}} papers · elapsed {{elapsed .P.Job.StartedAt}}</div>{{end}}
     <p class="small">{{.P.Job.Message}}</p>
@@ -23,6 +42,7 @@
       <tr>
         <td>
           {{if eq .Download.Status "ok"}}<span class="status-ok">✓ got PDF</span>
+          {{else if and (eq .Download.Status "failed") .Download.NeedsLogin}}<span class="status-failed" title="only the university proxy can supply this PDF; retried automatically after login">⏸ needs login</span>
           {{else if eq .Download.Status "failed"}}<span class="status-failed">✗ failed</span>
             {{if not $running}}<form method="post" action="/projects/{{$pid}}/papers/{{.ID}}/retry"><button class="small">Retry</button></form>
             <form method="post" action="/projects/{{$pid}}/papers/{{.ID}}/upload" enctype="multipart/form-data" class="small" style="margin-top:4px"><input type="file" name="pdf" accept="application/pdf" required style="width:130px;font-size:11px"><button class="small">Upload</button></form>{{end}}
