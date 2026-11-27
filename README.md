@@ -42,7 +42,7 @@ override any decision, undo. Nothing is thrown away unless you ask.
 
 ### 1. Requirements
 
-- **Go 1.22 or later** (the standard library only: no cgo, no external modules).
+- **Go 1.27 or later** (the standard library only: no cgo, no external modules).
 - **Access to Claude**, one of:
   - the **Claude Code CLI**, logged in with your Claude subscription
     (`claude /login`). No API key is needed and usage counts against your plan.
