@@ -94,7 +94,9 @@ func (s *Server) methodSummary(p *model.Project) string {
 func (s *Server) handleSynthesize(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	choice := strings.TrimSpace(r.FormValue("model"))
-	if !ai.KnownModel(choice) {
+	var saved string
+	_ = s.store.View(id, func(p *model.Project) { saved = p.StepModel(string(ai.StepSynthesis)) })
+	if !s.ai.Catalog().Known(choice) && choice != saved {
 		http.Redirect(w, r, "/projects/"+id+"?view=results&error="+urlEsc("unknown model "+choice), http.StatusSeeOther)
 		return
 	}

@@ -51,6 +51,11 @@
     <div class="checks" style="margin-top:8px"><label><input type="checkbox" name="peer_reviewed_only" value="1" checked> Peer-reviewed only: exclude preprint servers and repositories (arXiv, SSRN, OSF, Research Square, Zenodo…)</label>
     <label><input type="checkbox" name="english_only" value="1" checked> English only (reported language, or detected from title and abstract)</label></div>
     <p class="muted small">CORE appears only when <code>CORE_API_KEY</code> is set. Each database gets 2–3 AI-written queries in its own syntax.</p>
+    <details style="margin-top:8px">
+      <summary>Language models <span class="muted small">(optional; changeable later under Setup)</span></summary>
+      <p class="muted small"><i>Latest …</i> moves to new Claude releases automatically; a <i>pinned</i> model stays fixed. Screening makes most of the calls, so a cheaper model there saves the most.</p>
+      {{template "model_rows" .}}
+    </details>
     <div class="row" style="margin-top:12px">
       <button class="btn-primary" type="submit" name="start" value="1" {{if not .Base.AIEnabled}}disabled{{end}}>Create &amp; start AI search</button>
       <button type="submit" name="start" value="0">Create only</button>

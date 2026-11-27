@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"literaturereview/internal/ai"
 	"literaturereview/internal/config"
@@ -225,4 +226,108 @@ func TestSetupPageListsEveryStep(t *testing.T) {
 	if !strings.Contains(html, "env-screen") {
 		t.Error("setup page does not show the configured default for screening")
 	}
+}
+
+func TestNewReviewFormChoosesModels(t *testing.T) {
+	_, st, _, ts := newModelsServer(t, ai.Models{ai.StepScreening: "env-screen"})
+	r, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	for _, s := range ai.AllSteps {
+		if !strings.Contains(string(b), `name="model_`+string(s.Step)+`"`) {
+			t.Errorf("new review form lacks a selector for %s", s.Step)
+		}
+	}
+
+	resp := postForm(t, ts, "/projects", url.Values{"question": {"Q"}, "sources": {"fakedb"}, "model_screening": {"haiku"}, "model_synthesis": {"claude-opus-5-5"}, "model_queries": {""}})
+	id := strings.Split(strings.TrimPrefix(resp.Header.Get("Location"), "/projects/"), "?")[0]
+	var p model.Project
+	_ = st.View(id, func(pp *model.Project) { p = *pp })
+	if p.StepModels["screening"] != "haiku" || p.StepModels["synthesis"] != "claude-opus-5-5" || len(p.StepModels) != 2 {
+		t.Fatalf("created project models = %v", p.StepModels)
+	}
+
+	resp = postForm(t, ts, "/projects", url.Values{"question": {"Q"}, "sources": {"fakedb"}, "model_screening": {"gpt-4"}})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown model on create: status %d", resp.StatusCode)
+	}
+}
+
+func TestSelectorsFollowTheLiveModelList(t *testing.T) {
+	srv, _, _, ts := newModelsServer(t, nil)
+	released := []ai.ModelInfo{{ID: "claude-opus-5-5", DisplayName: "Claude Opus 5.5"}}
+	srv.ai = srv.ai.WithCatalog(ai.NewAPICatalog(func(context.Context) ([]ai.ModelInfo, error) { return released, nil }, 0))
+	page := func() string {
+		r, err := http.Get(ts.URL + "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		b, _ := io.ReadAll(r.Body)
+		return string(b)
+	}
+	if strings.Contains(page(), "claude-opus-6") {
+		t.Fatal("unreleased model offered")
+	}
+	released = append(released, ai.ModelInfo{ID: "claude-opus-6", DisplayName: "Claude Opus 6", CreatedAt: time.Now()})
+	html := page()
+	if !strings.Contains(html, `value="claude-opus-6"`) || !strings.Contains(html, "Latest Opus (claude-opus-6)") {
+		t.Fatal("a newly released model did not appear in the selectors")
+	}
+}
+
+func TestSavedModelOutsideTheListIsKept(t *testing.T) {
+	srv, st, _, ts := newModelsServer(t, nil)
+	srv.ai = srv.ai.WithCatalog(ai.NewCLICatalog()) // offers only the Latest aliases
+	_ = st.Put(&model.Project{ID: "pin", Title: "pin", Question: "Q", Sources: []string{"fakedb"}, StepModels: map[string]string{"synthesis": "claude-opus-5"}})
+
+	r, err := http.Get(ts.URL + "/projects/pin?view=setup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if !strings.Contains(string(b), `value="claude-opus-5" selected`) {
+		t.Fatal("the saved model is not shown as selected")
+	}
+	resp := postForm(t, ts, "/projects/pin/models", url.Values{"model_synthesis": {"claude-opus-5"}, "model_screening": {"haiku"}})
+	if strings.Contains(resp.Header.Get("Location"), "error=") {
+		t.Fatalf("re-saving the form rejected the saved model: %s", resp.Header.Get("Location"))
+	}
+	// The results page's per-draft picker must keep it too.
+	_ = st.Update("pin", func(p *model.Project) error {
+		p.Papers = []*model.Paper{{ID: "A", Title: "Alpha", Decision: model.DecisionKeep, Year: 2024, Authors: []string{"Ann Author"}}}
+		p.Stage = model.StageDone // the results view is shown only from this stage
+		return nil
+	})
+	r, err = http.Get(ts.URL + "/projects/pin?view=results")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ = io.ReadAll(r.Body)
+	r.Body.Close()
+	if !strings.Contains(string(b), `<select name="model"`) || !strings.Contains(string(b), `value="claude-opus-5" selected`) {
+		t.Fatalf("the synthesis picker drops the saved model:\n%s", grepLines(string(b), "<select name=\"model\""))
+	}
+	resp = postForm(t, ts, "/projects/pin/synthesize", url.Values{"model": {"claude-opus-5"}})
+	if strings.Contains(resp.Header.Get("Location"), "error=") {
+		t.Fatalf("regenerating with the saved model was rejected: %s", resp.Header.Get("Location"))
+	}
+	waitIdle(t, st, "pin")
+}
+
+func grepLines(s, sub string) string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		for _, p := range strings.Split(sub, "|") {
+			if strings.Contains(l, p) {
+				out = append(out, strings.TrimSpace(l))
+				break
+			}
+		}
+	}
+	return strings.Join(out, "\n")
 }

@@ -36,16 +36,23 @@ type stepModelView struct {
 	Choice  string // the project's pick ("" = default)
 	Default string // what "Default" resolves to right now
 	Next    string // the model the next call of this step will use
+	// Unlisted: the saved choice is not in the current list (another
+	// backend's id, or a retired model). It is still shown and accepted, so
+	// re-saving the form never silently drops it.
+	Unlisted bool
 }
 
 func (s *Server) stepModelViews(p *model.Project) []stepModelView {
 	var out []stepModelView
+	cat := s.ai.Catalog()
 	for _, st := range ai.AllSteps {
+		choice := p.StepModel(string(st.Step))
 		out = append(out, stepModelView{
 			StepInfo: st,
-			Choice:   p.StepModel(string(st.Step)),
+			Choice:   choice,
 			Default:  s.ai.ForStep(st.Step, nil, s.cfg.StepModels).ModelLabel(),
 			Next:     s.client(st.Step, p).ModelLabel(),
+			Unlisted: !cat.Known(choice),
 		})
 	}
 	return out
@@ -59,21 +66,15 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	picks := map[ai.Step]string{}
-	for _, st := range ai.AllSteps {
-		vals, ok := r.Form["model_"+string(st.Step)]
-		if !ok {
-			continue
-		}
-		v := strings.TrimSpace(vals[0])
-		if !ai.KnownModel(v) {
-			http.Redirect(w, r, "/projects/"+id+"?view=setup&error="+urlEsc(fmt.Sprintf("unknown model %q for %s", v, st.Label)), http.StatusSeeOther)
-			return
-		}
-		picks[st.Step] = v
+	var current model.Project
+	_ = s.store.View(id, func(p *model.Project) { current = *p })
+	picks, err := s.parseModelForm(r, &current)
+	if err != nil {
+		http.Redirect(w, r, "/projects/"+id+"?view=setup&error="+urlEsc(err.Error()), http.StatusSeeOther)
+		return
 	}
 	_ = s.store.SaveUndo(id, "Change models")
-	err := s.store.Update(id, func(p *model.Project) error {
+	err = s.store.Update(id, func(p *model.Project) error {
 		if p.Job != nil && p.Job.Running {
 			return errors.New("wait for the running job to finish before changing models")
 		}
@@ -87,4 +88,28 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/projects/"+id+"?view=setup", http.StatusSeeOther)
+}
+
+// parseModelForm reads the model_<step> fields of a submitted form. A step
+// left out of the form is absent from the result; "" means Default. A value
+// is accepted when the catalog lists it or it is the step's saved choice in
+// current (nil for a new project).
+func (s *Server) parseModelForm(r *http.Request, current *model.Project) (map[ai.Step]string, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+	cat := s.ai.Catalog()
+	picks := map[ai.Step]string{}
+	for _, st := range ai.AllSteps {
+		vals, ok := r.Form["model_"+string(st.Step)]
+		if !ok {
+			continue
+		}
+		v := strings.TrimSpace(vals[0])
+		if !cat.Known(v) && (current == nil || v != current.StepModel(string(st.Step))) {
+			return nil, fmt.Errorf("unknown model %q for %s", v, st.Label)
+		}
+		picks[st.Step] = v
+	}
+	return picks, nil
 }

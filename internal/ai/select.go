@@ -1,6 +1,9 @@
 package ai
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // BackendOptions are the settings that decide how Claude is reached.
 type BackendOptions struct {
@@ -24,10 +27,16 @@ func SelectBackend(opts BackendOptions, lookup func(string) (string, bool)) (*Cl
 			return nil, "", false
 		}
 		b := &CLIBackend{Path: path, Model: opts.CLIModel}
-		return New(b), fmt.Sprintf("AI backend: claude CLI in headless mode (%s, model: %s)", path, b.model()), true
+		return New(b).WithCatalog(NewCLICatalog()), fmt.Sprintf("AI backend: claude CLI in headless mode (%s, model: %s)", path, b.model()), true
 	}
 	api := func() (*Client, string) {
-		return NewAPI(opts.APIKey, opts.APIModel), fmt.Sprintf("AI backend: Anthropic API (model: %s)", opts.APIModel)
+		c := NewAPI(opts.APIKey, opts.APIModel)
+		b := c.backend.(*APIBackend)
+		// Six hours keeps new releases appearing within a working day without
+		// listing models on every page view.
+		cat := NewAPICatalog(b.ListModels, 6*time.Hour)
+		b.Model = cat.Resolve(b.Model) // ANTHROPIC_MODEL may be an alias such as "opus"
+		return c.WithCatalog(cat), fmt.Sprintf("AI backend: Anthropic API (model: %s)", b.Model)
 	}
 	switch opts.Mode {
 	case "api":

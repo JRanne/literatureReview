@@ -52,14 +52,9 @@
 </div>
 <div class="card">
   <h3>Language models</h3>
-  <p class="muted small">Each step can run on its own model. <i>Default</i> uses the server setting for that step (<code>MODEL_&lt;STEP&gt;</code>, e.g. <code>MODEL_SCREENING</code>), otherwise the backend model. Screening makes most of the calls, so a cheaper model there saves the most.</p>
+  <p class="muted small">Each step can run on its own model. <i>Latest …</i> moves to new Claude releases automatically; a <i>pinned</i> model stays fixed. <i>Default</i> uses the server setting for that step (<code>MODEL_&lt;STEP&gt;</code>), otherwise the backend model. Screening makes most of the calls, so a cheaper model there saves the most.</p>
   <form method="post" action="/projects/{{.P.ID}}/models">
-    <table class="models">
-      {{range .StepModels}}{{$row := .}}<tr>
-        <td><label for="model_{{.Step}}">{{.Label}}</label><div class="muted small">{{.Help}}</div></td>
-        <td><select id="model_{{.Step}}" name="model_{{.Step}}">{{range $.ModelChoices}}<option value="{{.ID}}" {{if eq .ID $row.Choice}}selected{{end}} title="{{.Note}}">{{.Label}}{{if and (not .ID) $row.Default}} ({{$row.Default}}){{end}}</option>{{end}}</select></td>
-      </tr>{{end}}
-    </table>
+    {{template "model_rows" .}}
     <div class="row" style="margin-top:12px"><button {{if .JobRunning}}disabled{{end}}>Save models</button></div>
   </form>
 </div>
@@ -235,4 +230,10 @@
 {{end}}
 {{template "bottom" .}}{{end}}
 
-{{define "synth_model_select"}}<label class="small" style="display:inline-flex;align-items:center;gap:6px">Model <select name="model" title="Model for the next draft; the other steps keep their own models (Setup → Language models)">{{range .ModelChoices}}<option value="{{.ID}}" {{if eq .ID $.SynthesisChoice}}selected{{end}} title="{{.Note}}">{{.Label}}{{if not .ID}} ({{$.SynthesisNext}}){{end}}</option>{{end}}</select></label>{{end}}
+{{define "model_rows"}}<table class="models">
+  {{range .StepModels}}{{$row := .}}<tr>
+    <td><label for="model_{{.Step}}">{{.Label}}</label><div class="muted small">{{.Help}}</div></td>
+    <td><select id="model_{{.Step}}" name="model_{{.Step}}">{{if .Unlisted}}<option value="{{.Choice}}" selected>{{.Choice}} (saved; not in the current list)</option>{{end}}{{range $.ModelChoices}}<option value="{{.ID}}" {{if eq .ID $row.Choice}}selected{{end}} title="{{.Note}}">{{.Label}}{{if and (not .ID) $row.Default}} ({{$row.Default}}){{end}}</option>{{end}}</select></td>
+  </tr>{{end}}
+</table>{{end}}
+{{define "synth_model_select"}}<label class="small" style="display:inline-flex;align-items:center;gap:6px">Model <select name="model" title="Model for the next draft; the other steps keep their own models (Setup → Language models)">{{if .SynthesisUnlisted}}<option value="{{.SynthesisChoice}}" selected>{{.SynthesisChoice}} (saved; not in the current list)</option>{{end}}{{range .ModelChoices}}<option value="{{.ID}}" {{if eq .ID $.SynthesisChoice}}selected{{end}} title="{{.Note}}">{{.Label}}{{if not .ID}} ({{$.SynthesisNext}}){{end}}</option>{{end}}</select></label>{{end}}

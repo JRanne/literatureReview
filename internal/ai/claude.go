@@ -16,7 +16,10 @@ import (
 	"literaturereview/internal/model"
 )
 
-const apiURL = "https://api.anthropic.com/v1/messages"
+const (
+	defaultBaseURL = "https://api.anthropic.com"
+	apiVersion     = "2023-06-01"
+)
 
 // Backend produces one assistant reply for a system + user prompt.
 type Backend interface {
@@ -36,12 +39,27 @@ func (c *Client) WithModel(model string) *Client {
 	if !c.Enabled() || model == "" {
 		return c
 	}
-	return &Client{backend: c.backend.WithModel(model)}
+	return &Client{backend: c.backend.WithModel(c.catalog.Resolve(model)), catalog: c.catalog}
+}
+
+// WithCatalog returns a client that offers and resolves models through cat.
+func (c *Client) WithCatalog(cat *Catalog) *Client {
+	return &Client{backend: c.backend, catalog: cat}
+}
+
+// Catalog returns the models this client can be switched to. It is never
+// nil-unsafe: a nil catalog offers the built-in list.
+func (c *Client) Catalog() *Catalog {
+	if c == nil {
+		return nil
+	}
+	return c.catalog
 }
 
 // Client runs the review prompts against whichever backend is configured.
 type Client struct {
 	backend Backend
+	catalog *Catalog
 }
 
 // New returns a client over the given backend (nil means AI is disabled).
@@ -87,6 +105,22 @@ type APIBackend struct {
 	APIKey string
 	Model  string
 	HTTP   *http.Client
+	// BaseURL overrides https://api.anthropic.com (tests).
+	BaseURL string
+}
+
+func (b *APIBackend) baseURL() string {
+	if b.BaseURL != "" {
+		return strings.TrimRight(b.BaseURL, "/")
+	}
+	return defaultBaseURL
+}
+
+func (b *APIBackend) httpClient() *http.Client {
+	if b.HTTP != nil {
+		return b.HTTP
+	}
+	return http.DefaultClient
 }
 
 func (b *APIBackend) Name() string       { return "api" }
@@ -141,14 +175,14 @@ func (c *APIBackend) Complete(ctx context.Context, system, user string, maxToken
 			case <-time.After(time.Duration(attempt*attempt) * 2 * time.Second):
 			}
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL()+"/v1/messages", bytes.NewReader(body))
 		if err != nil {
 			return "", err
 		}
 		req.Header.Set("content-type", "application/json")
 		req.Header.Set("x-api-key", c.APIKey)
-		req.Header.Set("anthropic-version", "2023-06-01")
-		resp, err := c.HTTP.Do(req)
+		req.Header.Set("anthropic-version", apiVersion)
+		resp, err := c.httpClient().Do(req)
 		if err != nil {
 			lastErr = err
 			continue
